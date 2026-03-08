@@ -91,11 +91,15 @@ class Database:
     async def _get_db(self) -> LibsqlConnectionShim:
         if self._db is None:
             if config.TURSO_DATABASE_URL and config.TURSO_AUTH_TOKEN:
+                url = config.TURSO_DATABASE_URL
+                if url.startswith("libsql://"):
+                    url = url.replace("libsql://", "https://")
                 client = libsql_client.create_client(
-                    url=config.TURSO_DATABASE_URL,
+                    url=url,
                     auth_token=config.TURSO_AUTH_TOKEN
                 )
-                logger.info("Connected to Turso Cloud DB")
+                logger.info("Connected to Turso Cloud DB (via HTTPS)")
+
             else:
                 client = libsql_client.create_client(f"file:{self.db_path}")
                 logger.info(f"Connected to local SQLite DB ({self.db_path}) via libsql")
