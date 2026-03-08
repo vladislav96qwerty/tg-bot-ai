@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -36,8 +37,12 @@ async def run_dummy_server():
     app.router.add_get('/health', handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 7860)
+    
+    # Render assigns a dynamic PORT environment variable
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    logger.info(f"Dummy web server started on port {port}")
     return runner
 
 
