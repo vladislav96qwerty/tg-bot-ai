@@ -59,31 +59,51 @@ class AIService:
         if expect_json and "JSON" not in prompt:
             prompt += "\n\nProvide response in strict JSON format."
 
+        # Offload blocking genai call to a thread
         response = await asyncio.to_thread(
             self.gemini_client.models.generate_content,
             model="gemini-1.5-flash",
             contents=prompt,
         )
         content = response.text
-
-        if expect_json:
-            content = content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-
         return self._parse_json(content) if expect_json else content
 
     def _parse_json(self, content: str) -> Optional[Dict[str, Any]]:
+        """Robustly extracts and parses JSON from AI response."""
+        if not content:
+            return None
+            
+        content = content.strip()
+        
+        # 1. Try direct parsing
         try:
             return json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}. Content: {content}")
-            return None
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Try extracting from markdown code blocks
+        import re
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r"```\s*(\{.*?\})\s*```", content, re.DOTALL)
+        
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # 3. Last resort: find first { and last }
+        start = content.find('{')
+        end = content.rfind('}')
+        if start != -1 and end != -1:
+            try:
+                return json.loads(content[start:end+1])
+            except json.JSONDecodeError:
+                pass
+
+        logger.error(f"Failed to parse JSON even with regex. Content: {content[:200]}...")
+        return None
 
 
 # Global instance

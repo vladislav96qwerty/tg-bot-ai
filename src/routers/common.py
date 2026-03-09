@@ -26,6 +26,7 @@ PERSISTENT_MENU = ReplyKeyboardMarkup(
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject):
+    await state.clear()
     user_id = message.from_user.id
 
     user = await db.get_user(user_id)

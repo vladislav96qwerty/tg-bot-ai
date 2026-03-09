@@ -5,8 +5,9 @@ src/routers/menu_handlers.py
 ВИПРАВЛЕНО: узгоджено callback_data з чекером v5, стандартизовано parse_mode="HTML".
 """
 import json
-import logging
 import html
+import logging
+import asyncio
 
 from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -737,19 +738,25 @@ async def cb_top_movies_period(callback: types.CallbackQuery):
         text = f"🏆 <b>Топ {label}</b>\n\n📭 Поки немає достатньо оцінок.\nОцінюй фільми — і ти з'явишся тут!"
     else:
         text = f"🏆 <b>Топ {label} за версією глядачів</b>\n\n"
+        # Fetch all details in parallel to avoid N+1 problem
+        get_details = tmdb_service.get_movie_details
+        tasks = [get_details(m["tmdb_id"]) for m in top]
+        details_list = await asyncio.gather(*tasks, return_exceptions=True)
+
         medals = ["🥇", "🥈", "🥉"] + ["🎬"] * 7
-        for i, movie in enumerate(top):
+        for i, (movie, details) in enumerate(zip(top, details_list)):
             tmdb_id = movie["tmdb_id"]
             avg = movie["avg_rating"]
             votes = movie["vote_count"]
-            try:
-                details = await tmdb_service.get_movie_details(tmdb_id)
+            
+            if isinstance(details, Exception) or not details:
+                title = f"Фільм ID:{tmdb_id}"
+                year_str = ""
+            else:
                 title = details.get("title") or details.get("original_title") or f"ID:{tmdb_id}"
                 year = (details.get("release_date") or "")[:4]
                 year_str = f" ({year})" if year else ""
-            except Exception:
-                title = f"Фільм ID:{tmdb_id}"
-                year_str = ""
+            
             text += f"{medals[i]} <b>{html.escape(title)}</b>{year_str} — ⭐ {avg}/10 ({votes} оцінок)\n"
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[

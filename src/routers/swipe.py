@@ -68,11 +68,7 @@ async def show_next_swipe(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="🛑 Завершити", callback_data="back_to_menu")],
     ])
 
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
+    old_msg = callback.message
     try:
         poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
         if poster_url:
@@ -81,6 +77,12 @@ async def show_next_swipe(callback: types.CallbackQuery):
             )
         else:
             await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+            
+        # Delete old message AFTER sending new one to avoid flickering
+        try:
+            await old_msg.delete()
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Error showing swipe: {e}")
         await callback.message.answer("Помилка відображення фільму.")

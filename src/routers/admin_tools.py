@@ -517,14 +517,25 @@ async def view_feedback(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("feedback_view:"), admin_filter)
 async def view_single_feedback(callback: types.CallbackQuery):
     fb_id = int(callback.data.split(":")[1])
-    # Placeholder for single view logic - in a real app you'd fetch by ID
-    await callback.answer(f"Фідбек ID {fb_id}")
-    # Mark as done for now to satisfy checker
+    item = await db.get_feedback_by_id(fb_id)
+    if not item:
+        return await callback.answer("Фідбек не знайдено", show_alert=True)
+    
+    user_info = f"UID: <code>{item['user_id']}</code>"
+    text = (
+        f"📬 <b>Фідбек #{fb_id}</b>\n\n"
+        f"👤 Від: {user_info}\n"
+        f"📂 Тип: <code>{item['type']}</code>\n"
+        f"🕒 Дата: {item['created_at']}\n\n"
+        f"💬 <b>Текст:</b>\n{html.escape(item['text'])}"
+    )
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Виконано", callback_data=f"feedback_status:{fb_id}:done")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_feedback")]
     ])
-    await callback.message.edit_text(f"Деталі фідбеку #{fb_id} (Тут буде повний текст)", reply_markup=keyboard)
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("feedback_status:"), admin_filter)

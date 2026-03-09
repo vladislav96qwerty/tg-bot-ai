@@ -23,6 +23,7 @@ from src.routers import (
 )
 from src.database.db import db
 from src.middlewares.subscription import SubscriptionMiddleware
+from src.middlewares.throttling import ThrottlingMiddleware
 from src.services.scheduler import ChannelScheduler
 from src.services.tmdb import tmdb_service
 
@@ -58,6 +59,9 @@ async def main() -> None:
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher()
 
+    # Middlewares
+    dp.update.middleware(ThrottlingMiddleware())  # Flood protection
+    
     middleware = SubscriptionMiddleware()
     dp.message.outer_middleware(middleware)
     dp.callback_query.outer_middleware(middleware)

@@ -97,18 +97,22 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
             )
             return
 
-        # Отримуємо популярні фільми
-        movies = await tmdb_service.get_popular_movies()
-        if not movies:
+        # Get voted IDs for this user in this session
+        voted_ids = await db.get_session_voted_ids(session_id, callback.from_user.id)
+        
+        # Filter available movies
+        available = [m for m in movies if m.get("id") not in voted_ids]
+        
+        if not available:
             await callback.message.edit_text(
-                "😔 Не вдалося отримати фільми. Спробуйте пізніше.",
+                "🎉 Ви переглянули всі популярні фільми! Чекайте на оновлення або спробуйте іншу категорію.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")]
                 ])
             )
             return
-            
-        movie = random.choice(movies)
+
+        movie = random.choice(available)
         overview = movie.get("overview") or ""
 
         safe_title = html.escape(movie.get('title', '?'))
@@ -134,12 +138,7 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
             [InlineKeyboardButton(text="🛑 Завершити", callback_data="back_to_menu")],
         ])
         
-        # Видаляємо попереднє повідомлення
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-            
+        old_msg = callback.message
         # Відправляємо з постером або без
         poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
         if poster_url:
@@ -155,6 +154,12 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
                 reply_markup=keyboard, 
                 parse_mode="HTML"
             )
+            
+        # Видаляємо попереднє повідомлення AFTER відправки нового
+        try:
+            await old_msg.delete()
+        except Exception:
+            pass
             
     except Exception as e:
         logger.error(f"Error showing next joint movie: {e}")

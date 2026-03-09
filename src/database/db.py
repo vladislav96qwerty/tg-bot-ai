@@ -621,6 +621,13 @@ class Database:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
 
+    async def get_session_voted_ids(self, session_id: str, user_id: int):
+        query = "SELECT tmdb_id FROM session_votes WHERE session_id = ? AND user_id = ?"
+        db = await self._get_db()
+        async with db.execute(query, (session_id, user_id)) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
     # в”Ђв”Ђ Points & Games в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     async def add_points(self, user_id: int, points: int):
@@ -779,6 +786,13 @@ class Database:
                 rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
+    async def get_feedback_by_id(self, feedback_id: int) -> Optional[Dict[str, Any]]:
+        db = await self._get_db()
+        query = "SELECT * FROM feedback WHERE id = ?"
+        async with db.execute(query, (feedback_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
     async def update_feedback_status(self, feedback_id: int, status: str, admin_reply: str = None):
         db = await self._get_db()
         if admin_reply:
@@ -872,21 +886,25 @@ class Database:
             return [dict(row) for row in rows]
 
     async def search_users(self, query_str: str, limit: int = 10) -> list:
-        """Search users by username or user_id."""
+        """Search users by username or user_id (sanitizes LIKE)."""
         db = await self._get_db()
+        query_clean = query_str.strip()
         # Try numeric first (user_id search)
-        if query_str.isdigit():
+        if query_clean.isdigit():
             async with db.execute(
                 "SELECT * FROM users WHERE user_id = ? LIMIT ?",
-                (int(query_str), limit)
+                (int(query_clean), limit)
             ) as cursor:
                 rows = await cursor.fetchall()
                 if rows:
                     return [dict(row) for row in rows]
-        # Username search
+        # Username search with sanitization for LIKE
+        username_query = query_clean.lstrip('@')
+        # Escape special LIKE characters: % and _
+        sanitized = username_query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
         async with db.execute(
-            "SELECT * FROM users WHERE username LIKE ? LIMIT ?",
-            (f"%{query_str.lstrip('@')}%", limit)
+            "SELECT * FROM users WHERE username LIKE ? ESCAPE '\\' LIMIT ?",
+            (f"%{sanitized}%", limit)
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]

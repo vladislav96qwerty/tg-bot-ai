@@ -267,14 +267,13 @@ async def cb_movie_details(callback: types.CallbackQuery):
     movie_id = int(callback.data.split(":")[1])
     await callback.answer()
 
-    # ✅ FIX #4: спочатку видаляємо старе повідомлення, потім показуємо нове
-    # Це усуває мерехтіння (раніше: send new → delete old = обидва видно одночасно)
+    # ✅ FIX: send new first, then delete old to avoid flickering
+    old_msg = callback.message
+    await show_movie_details(callback.message, movie_id, edit=False, user_id=callback.from_user.id)
     try:
-        await callback.message.delete()
+        await old_msg.delete()
     except Exception:
         pass
-
-    await show_movie_details(callback.message, movie_id, edit=False, user_id=callback.from_user.id)
 
 
 @router.callback_query(F.data.startswith("similar:"))
@@ -324,18 +323,19 @@ async def cb_back_to_search(callback: types.CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
+    # ✅ FIX: send new first, then delete old
+    old_msg = callback.message
     if not query or not results:
         await callback.message.answer(
             "🔍 Введи назву фільму для пошуку:",
             parse_mode="Markdown"
         )
-        return
+    else:
+        has_premium = await is_premium(callback.from_user.id, callback.bot)
+        text, markup = _build_search_message(query, results, has_premium)
+        await callback.message.answer(text, reply_markup=markup, parse_mode="Markdown")
 
-    has_premium = await is_premium(callback.from_user.id, callback.bot)
-    text, markup = _build_search_message(query, results, has_premium)
-    await callback.message.answer(text, reply_markup=markup, parse_mode="Markdown")
+    try:
+        await old_msg.delete()
+    except Exception:
+        pass
