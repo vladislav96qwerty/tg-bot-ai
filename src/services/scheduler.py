@@ -389,7 +389,7 @@ class ChannelScheduler:
                 parse_mode="Markdown",
                 reply_markup=keyboard,
             )
-            await db.save_daily_picks_cache(json.dumps(content.get("films", []), ensure_ascii=False))
+            await db.save_daily_picks_cache(json.dumps(content, ensure_ascii=False))
             await db.save_channel_post("daily_picks", content["intro"][:100], text, None, bot_msg.message_id)
             logger.info("Daily picks post sent to channel.")
         except Exception as e:
@@ -822,7 +822,7 @@ class ChannelScheduler:
                 parse_mode="Markdown",
                 reply_markup=keyboard,
             )
-            await db.save_daily_picks_cache(json.dumps(content.get("films", []), ensure_ascii=False))
+            await db.save_daily_picks_cache(json.dumps(content, ensure_ascii=False))
             await db.save_channel_post("daily_picks", content["intro"][:100], text, None, bot_msg.message_id)
             logger.info("Daily picks post sent to channel.")
         except Exception as e:

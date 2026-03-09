@@ -94,10 +94,20 @@ class SubscriptionMiddleware(BaseMiddleware):
                 await db.update_user(
                     user.id,
                     channel_member_checked_at=datetime.now().isoformat(),
+                    channel_member_status="member",
                 )
             except Exception:
                 pass
             return await handler(event, data)
+        else:
+            try:
+                await db.update_user(
+                    user.id,
+                    channel_member_checked_at=datetime.now().isoformat(),
+                    channel_member_status="left",
+                )
+            except Exception:
+                pass
 
         # Не підписаний — відправляємо запит
         await self._send_subscription_prompt(event, bot)

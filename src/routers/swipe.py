@@ -74,7 +74,7 @@ async def show_next_swipe(callback: types.CallbackQuery):
         pass
 
     try:
-        poster_url = await tmdb_service.get_poster_url(movie.get("poster_path"))
+        poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
         if poster_url:
             await callback.message.answer_photo(
                 poster_url, caption=text, reply_markup=keyboard, parse_mode="HTML"

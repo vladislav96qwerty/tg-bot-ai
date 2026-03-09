@@ -775,7 +775,7 @@ async def cb_save_quote(callback: types.CallbackQuery):
     quote_key = callback.data.split(":", 1)[1]
     db_conn = await db._get_db()
     async with db_conn.execute(
-        "SELECT content FROM channel_posts WHERE post_type='quote_data' AND title=?", 
+        "SELECT content FROM channel_posts WHERE post_type='quote_cache' AND preview_text=?", 
         (quote_key,)
     ) as cursor:
         row = await cursor.fetchone()
