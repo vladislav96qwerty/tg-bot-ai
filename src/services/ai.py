@@ -78,8 +78,8 @@ class AIService:
         # 1. Try direct parsing
         try:
             return json.loads(content)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug(f"Direct JSON parse failed: {e}")
 
         # 2. Try extracting from markdown code blocks
         import re

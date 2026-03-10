@@ -20,6 +20,9 @@ class RecommendationStates(StatesGroup):
 
 @router.callback_query(F.data == "menu_ai_rec")
 async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     """Handler for 'AI Recommendation' menu button."""
     user_id = callback.from_user.id
     
@@ -41,8 +44,8 @@ async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext
     await callback.answer()
     try:
         await callback.message.edit_text("🤖 <b>Нетик вимикає логіку і вмикає інтуїцію...</b>\nАналізую твої смаки, зачекай трішки.", parse_mode="HTML")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to edit recommendations message: {e}")
 
     recs = await recommender_service.get_recommendations(user_id)
 
@@ -103,8 +106,8 @@ async def show_recommendation_card(message: types.Message, movie: Dict[str, Any]
         await message.answer_photo(photo=photo_url, caption=text, reply_markup=markup, parse_mode="HTML")
         try:
             await message.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to delete recs message: {e}")
     else:
         try:
             await message.edit_text(text, reply_markup=markup, parse_mode="HTML")
@@ -114,6 +117,9 @@ async def show_recommendation_card(message: types.Message, movie: Dict[str, Any]
 
 @router.callback_query(F.data == "next_ai_rec", RecommendationStates.VIEWING)
 async def cb_next_ai_rec(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     data = await state.get_data()
     recs = data.get("ai_recs", [])
     index = data.get("current_index", 0) + 1

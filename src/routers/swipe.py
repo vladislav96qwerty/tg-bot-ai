@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "menu_swipe")
 async def start_swipe_session(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     if not await is_premium(user_id, callback.bot):
         return await callback.answer(
@@ -32,6 +35,9 @@ async def start_swipe_session(callback: types.CallbackQuery):
 
 
 async def show_next_swipe(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     session = await db.get_swipe_session(user_id)
     if not session:
@@ -81,8 +87,8 @@ async def show_next_swipe(callback: types.CallbackQuery):
         # Delete old message AFTER sending new one to avoid flickering
         try:
             await old_msg.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to delete old swipe message: {e}")
     except Exception as e:
         logger.error(f"Error showing swipe: {e}")
         await callback.message.answer("Помилка відображення фільму.")
@@ -90,6 +96,9 @@ async def show_next_swipe(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("swipe_"))
 async def handle_swipe(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     action, tmdb_id_str = callback.data.split(":")
     tmdb_id = int(tmdb_id_str)
     user_id = callback.from_user.id

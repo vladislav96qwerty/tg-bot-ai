@@ -118,6 +118,9 @@ async def show_profile(event: Union[types.Message, types.CallbackQuery]):
 
 @router.callback_query(F.data == "profile_notifications")
 async def cb_notifications(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
@@ -135,6 +138,9 @@ async def cb_notifications(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "profile_referral")
 async def cb_profile_referral(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     bot_info = await callback.bot.get_me()
     bot_username = bot_info.username

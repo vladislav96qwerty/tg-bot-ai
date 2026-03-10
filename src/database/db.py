@@ -203,6 +203,14 @@ class Database:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
+    async def get_recent_post_by_type(self, post_type: str) -> Optional[Dict]:
+        """Повертає останній пост заданого типу."""
+        query = "SELECT * FROM channel_posts WHERE post_type = ? ORDER BY posted_at DESC LIMIT 1"
+        db = await self._get_db()
+        async with db.execute(query, (post_type,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
     # Р—Р°Р»РёС€Р°С”РјРѕ РґР»СЏ Р·РІРѕСЂРѕС‚РЅРѕС— СЃСѓРјС–СЃРЅРѕСЃС‚С– (РІРёРєРѕСЂРёСЃС‚РѕРІСѓС”С‚СЊСЃСЏ РІ scheduler.py)
     # в”Ђв”Ђ User Management в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 

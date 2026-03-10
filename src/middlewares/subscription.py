@@ -33,7 +33,7 @@ class SubscriptionMiddleware(BaseMiddleware):
 
         # Whitelist — колбеки без перевірки підписки
         if isinstance(event, types.CallbackQuery):
-            if event.data in ["subscribe_check", "back_to_menu"]:
+            if event.data in ["subscribe_check"]:
                 return await handler(event, data)
 
         # Отримуємо користувача з БД
@@ -82,9 +82,13 @@ class SubscriptionMiddleware(BaseMiddleware):
             try:
                 last_checked = datetime.fromisoformat(last_checked_str)
                 if datetime.now() - last_checked < timedelta(hours=1):
-                    return await handler(event, data)
-            except (ValueError, TypeError):
-                pass
+                    if user_db.get("channel_member_status") == "member":
+                        return await handler(event, data)
+                    else:
+                        await self._send_subscription_prompt(event, bot)
+                        return None
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to parse last_checked_at: {e}")
 
         # Перевіряємо підписку через Telegram API
         is_subscribed = await self._check_subscription(bot, user.id)
@@ -96,8 +100,8 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="member",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Помилка оновлення статусу підписки: {e}")
             return await handler(event, data)
         else:
             try:
@@ -106,8 +110,8 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="left",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Не вдалося оновити статус учасника: {e}")
 
         # Не підписаний — відправляємо запит
         await self._send_subscription_prompt(event, bot)
@@ -156,14 +160,13 @@ class SubscriptionMiddleware(BaseMiddleware):
         if isinstance(event, types.Message):
             await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
         else:
-            try:
-                await event.message.edit_text(
-                    text, reply_markup=keyboard, parse_mode="HTML"
-                )
-            except Exception:
-                await event.message.answer(
-                    text, reply_markup=keyboard, parse_mode="HTML"
-                )
+            if event.message:
+                try:
+                    await event.message.edit_text(
+                        text, reply_markup=keyboard, parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logger.error(f"Помилка відправки повідомлення підписки: {e}")
             await event.answer(
                 "Спочатку підпишись на канал! 🎬", show_alert=True
             )

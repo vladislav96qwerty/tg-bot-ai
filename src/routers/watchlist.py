@@ -54,6 +54,9 @@ async def _render_manage(message: types.Message, user_id: int, tmdb_id: int):
 
 @router.callback_query(F.data.startswith("wl_add:"))
 async def cb_add_to_watchlist(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     tmdb_id = int(callback.data.split(":")[1])
     has_premium = await is_premium(user_id, callback.bot)
@@ -78,6 +81,9 @@ async def cb_add_to_watchlist(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("rate:"))
 async def cb_rate_movie_start(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     tmdb_id = int(callback.data.split(":")[1])
     row1 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(1, 6)]
     row2 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(6, 11)]
@@ -87,13 +93,16 @@ async def cb_rate_movie_start(callback: types.CallbackQuery):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[row1, row2, [InlineKeyboardButton(text="◀️ Назад", callback_data=f"movie_id:{tmdb_id}")]]),
             parse_mode="Markdown"
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Помилка редагування повідомлення для оцінки: {e}")
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("set_rating:"))
 async def cb_set_rating(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     params = callback.data.split(":")
     tmdb_id, rating, user_id = int(params[1]), int(params[2]), callback.from_user.id
     await db.add_rating(user_id, tmdb_id, rating)
@@ -108,6 +117,9 @@ async def cb_set_rating(callback: types.CallbackQuery):
 @router.callback_query(F.data == "menu_watchlist")
 @router.callback_query(F.data.startswith("wl_tab:"))
 async def cb_show_watchlist(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     status = callback.data.split(":")[1] if callback.data.startswith("wl_tab:") else "want"
     await _render_watchlist(callback.message, user_id, status)
@@ -116,12 +128,18 @@ async def cb_show_watchlist(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("wl_manage:"))
 async def cb_manage_item(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     await _render_manage(callback.message, callback.from_user.id, int(callback.data.split(":")[1]))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("wl_set:"))
 async def cb_update_status(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     _, tmdb_id, new_status = callback.data.split(":")
     await db.update_watchlist_status(callback.from_user.id, int(tmdb_id), new_status)
     await callback.answer("✅ Статус оновлено")
@@ -130,6 +148,9 @@ async def cb_update_status(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("wl_del:"))
 async def cb_delete_item(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     tmdb_id = int(callback.data.split(":")[1])
     await db.delete_from_watchlist(callback.from_user.id, tmdb_id)
     await callback.answer("🗑 Видалено")

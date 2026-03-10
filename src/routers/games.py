@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "menu_guess")
 async def start_guess_game(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     has_premium = await is_premium(user_id, callback.bot)
 
@@ -52,8 +55,8 @@ async def start_guess_game(callback: types.CallbackQuery):
 
     try:
         await callback.message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete guess game message: {e}")
 
     await callback.answer()
     await callback.message.answer_photo(
@@ -66,6 +69,9 @@ async def start_guess_game(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("guess_val:"))
 async def handle_guess(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     params = callback.data.split(":")
     tmdb_id = int(params[1])
     guess = float(params[2])

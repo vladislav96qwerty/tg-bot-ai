@@ -76,6 +76,9 @@ async def get_daily_picks_content(force: bool = False) -> Dict[str, Any]:
 @router.callback_query(F.data == "menu_daily_picks")
 @router.callback_query(F.data == "refresh_daily_picks")
 async def cb_daily_picks(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Хендлер кнопки 'Добірка дня'."""
     is_refresh = callback.data == "refresh_daily_picks"
     user_id = callback.from_user.id

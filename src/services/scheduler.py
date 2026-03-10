@@ -20,10 +20,22 @@ from src.services.prompts import (
     DAILY_PICKS_PROMPT,
     CONTROVERSIAL_POST_PROMPT,
     WEEKLY_SUMMARY_PROMPT,
+    ACTOR_SPOTLIGHT_PROMPT,
+    QUIZ_PROMPT,
+    GUESS_MOVIE_PROMPT,
 )
 from src.services.image_generator import image_generator
 
 logger = logging.getLogger(__name__)
+
+
+def _escape_md(text: str) -> str:
+    """Екранує Markdown-символи в AI-тексті."""
+    if not text:
+        return ""
+    for ch in ['*', '_', '[', ']', '`']:
+        text = text.replace(ch, f'\\{ch}')
+    return text
 
 
 async def _build_watch_keyboard(movie_id: int, title: str) -> InlineKeyboardMarkup | None:
@@ -68,17 +80,32 @@ class ChannelScheduler:
         self.scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
 
     def start(self):
-        # Mon-Fri 09:00 — Morning movie post
+        # Every day 09:00 — Morning movie post
         self.scheduler.add_job(self.post_morning_movie, "cron", hour=9, minute=0)
+
+        # Mon 11:00 — Actor spotlight
+        self.scheduler.add_job(self.post_actor_spotlight, "cron", day_of_week="mon", hour=11, minute=0)
+
+        # Wed 19:00 — Cinematic quiz
+        self.scheduler.add_job(self.post_quiz, "cron", day_of_week="wed", hour=19, minute=0)
 
         # Every day 13:00 — Quote of the day (Pillow card)
         self.scheduler.add_job(self.post_quote_of_day, "cron", hour=13, minute=0)
 
-        # Tue & Thu 18:00 — Controversial hot take (overrated / underrated)
+        # Tue & Thu 18:00 — Controversial hot take
         self.scheduler.add_job(self.post_controversial, "cron", day_of_week="tue,thu", hour=18, minute=0)
+
+        # Thu 20:00 — Taste poll
+        self.scheduler.add_job(self.post_taste_poll, "cron", day_of_week="thu", hour=20, minute=0)
 
         # Fri 17:00 — Hidden gem
         self.scheduler.add_job(self.post_hidden_gem, "cron", day_of_week="fri", hour=17, minute=0)
+
+        # Sat 15:00 — Guess the movie (Question)
+        self.scheduler.add_job(self.post_guess_movie, "cron", day_of_week="sat", hour=15, minute=0)
+
+        # Sat 17:00 — Guess the movie (Answer)
+        self.scheduler.add_job(self.post_guess_answer, "cron", day_of_week="sat", hour=17, minute=0)
 
         # Every day 21:00 — Daily picks
         self.scheduler.add_job(self.post_daily_picks, "cron", hour=21, minute=0)
@@ -87,7 +114,7 @@ class ChannelScheduler:
         self.scheduler.add_job(self.post_weekly_summary, "cron", day_of_week="sun", hour=12, minute=0)
 
         self.scheduler.start()
-        logger.info("Channel Scheduler started with 6 jobs.")
+        logger.info("Channel scheduler started.")
 
     async def _notify_admins(self, error_msg: str):
         """Notification for admins on scheduler failure."""
@@ -98,8 +125,8 @@ class ChannelScheduler:
                     f"⚠️ <b>Scheduler Error</b>\n\n{error_msg}",
                     parse_mode="HTML"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Помилка сповіщення адміна: {e}")
 
     # ── 1. Morning Movie (09:00 daily) ─────────────────────────────────────
 
@@ -128,13 +155,25 @@ class ChannelScheduler:
 
             text = f"{res['post']}\n\n{res['signature']}"
 
+
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
-            bot_msg = await self.bot.send_message(
-                chat_id=config.CHANNEL_ID,
-                text=text,
-                reply_markup=keyboard,
-            )
+            poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
+            if poster_url:
+                bot_msg = await self.bot.send_photo(
+                    chat_id=config.CHANNEL_ID,
+                    photo=poster_url,
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
+            else:
+                bot_msg = await self.bot.send_message(
+                    chat_id=config.CHANNEL_ID,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
             await db.save_channel_post("morning", res["post"][:100], text, movie_id, bot_msg.message_id)
             logger.info("Morning post sent.")
         except Exception as e:
@@ -159,9 +198,9 @@ class ChannelScheduler:
 
             caption = (
                 f"🎬 *Цитата дня*\n\n"
-                f"_{res['quote_ua']}_\n\n"
-                f"📌 {res['film']} ({res.get('year', '')})\n"
-                f"💡 {res.get('why_today', '')}\n\n"
+                f"_{_escape_md(res['quote_ua'])}_\n\n"
+                f"📌 {_escape_md(res['film'])} ({res.get('year', '')})\n"
+                f"💡 {_escape_md(res.get('why_today', ''))}\n\n"
                 f"@{config.CHANNEL_USERNAME.replace('@', '')}"
             )
 
@@ -259,11 +298,11 @@ class ChannelScheduler:
 
             text = (
                 f"{type_emoji} *{type_label}*\n\n"
-                f"🔥 *{res['headline']}*\n\n"
-                f"{res['argument']}\n\n"
-                f"🤔 {res.get('counterpoint', '')}\n\n"
-                f"💬 {res.get('question', '')}\n\n"
-                f"{res.get('signature', '— Нетик')}"
+                f"🔥 *{_escape_md(res['headline'])}*\n\n"
+                f"{_escape_md(res['argument'])}\n\n"
+                f"🤔 {_escape_md(res.get('counterpoint', ''))}\n\n"
+                f"💬 {_escape_md(res.get('question', ''))}\n\n"
+                f"{_escape_md(res.get('signature', '— Нетик'))}"
             )
 
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
@@ -327,11 +366,11 @@ class ChannelScheduler:
 
             text = (
                 f"💎 *Прихована перлина*\n\n"
-                f"*{res['hook']}*\n\n"
-                f"{res['body']}\n\n"
-                f"✨ *Цікава деталь:* {res.get('best_moment', '')}\n"
-                f"🚫 *Не для тих...* {res.get('not_for_who', '')}\n\n"
-                f"{res.get('signature', '— Нетик')}"
+                f"*{_escape_md(res['hook'])}*\n\n"
+                f"{_escape_md(res['body'])}\n\n"
+                f"✨ *Цікава деталь:* {_escape_md(res.get('best_moment', ''))}\n"
+                f"🚫 *Не для тих...* {_escape_md(res.get('not_for_who', ''))}\n\n"
+                f"{_escape_md(res.get('signature', '— Нетик'))}"
             )
 
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
@@ -386,13 +425,13 @@ class ChannelScheduler:
                 await self._notify_admins("post_daily_picks: AI returned incomplete content")
                 return logger.warning("post_daily_picks: AI returned incomplete content")
 
-            text = f"🎃 *Добірка дня від Нетика*\n\n{content['intro']}\n\n"
+            text = f"🎃 *Добірка дня від Нетика*\n\n{_escape_md(content['intro'])}\n\n"
             for film in content.get("films", []):
-                text += f"{film.get('emoji', '🎬')} *{film.get('title_ua', 'Фільм')}* — {film.get('pitch', '')}\n\n"
+                text += f"{film.get('emoji', '🎬')} *{_escape_md(film.get('title_ua', 'Фільм'))}* — {_escape_md(film.get('pitch', ''))}\n\n"
 
             outro = content.get("outro", "")
             if outro:
-                text += f"{outro}\n\n"
+                text += f"{_escape_md(outro)}\n\n"
             text += f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
 
             # Будуємо кнопки з першого фільму добірки
@@ -440,10 +479,10 @@ class ChannelScheduler:
 
             text = (
                 f"📊 *Підсумки тижня від Нетика*\n\n"
-                f"{res['summary']}\n\n"
-                f"✨ {res.get('highlight', '')}\n\n"
-                f"{res.get('cta', '')}\n\n"
-                f"{res.get('signature', '— Нетик')}\n\n"
+                f"{_escape_md(res['summary'])}\n\n"
+                f"✨ {_escape_md(res.get('highlight', ''))}\n\n"
+                f"{_escape_md(res.get('cta', ''))}\n\n"
+                f"{_escape_md(res.get('signature', '— Нетик'))}\n\n"
                 f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
             )
 
@@ -457,3 +496,193 @@ class ChannelScheduler:
         except Exception as e:
             logger.error(f"post_weekly_summary error: {e}", exc_info=True)
             await self._notify_admins(f"post_weekly_summary error: {e}")
+
+    async def post_actor_spotlight(self):
+        """Пн 11:00 — 'Актор тижня'."""
+        try:
+            # Знаходимо популярного актора (через трендінг або випадкового зі списку кращих)
+            # Для простоти візьмемо когось із трендів TMDB
+            actor = await tmdb_service.get_trending_person()
+            if not actor:
+                return logger.warning("post_actor_spotlight: no actor found")
+
+            name = actor.get("name")
+            prompt = ACTOR_SPOTLIGHT_PROMPT.format(name=name)
+            res = await ai_service.ask(prompt, expect_json=True)
+            if not res or "intro" not in res:
+                return logger.warning("post_actor_spotlight: AI error")
+
+            facts = "\n".join([f"🔹 {_escape_md(f)}" for f in res.get("facts", [])])
+            movies = "\n".join([f"🎬 *{_escape_md(m)}*" for m in res.get("best_movies", [])])
+
+            text = (
+                f"🎭 *Актор тижня: {name}*\n\n"
+                f"{_escape_md(res['intro'])}\n\n"
+                f"*Цікаві факти:*\n{facts}\n\n"
+                f"*Найкращі фільми:*\n{movies}\n\n"
+                f"✨ {_escape_md(res.get('cta', ''))}\n\n"
+                f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
+            )
+
+            photo_path = actor.get("profile_path")
+            photo_url = f"https://image.tmdb.org/t/p/w500{photo_path}" if photo_path else None
+
+            if photo_url:
+                await self.bot.send_photo(chat_id=config.CHANNEL_ID, photo=photo_url, caption=text, parse_mode="Markdown")
+            else:
+                await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
+
+            await db.save_channel_post("actor_spotlight", name, text, None, 0)
+            logger.info(f"Actor spotlight post sent: {name}")
+        except Exception as e:
+            logger.error(f"post_actor_spotlight error: {e}", exc_info=True)
+
+    async def post_quiz(self):
+        """Ср 19:00 — Кіновікторина (Poll)."""
+        try:
+            res = await ai_service.ask(QUIZ_PROMPT, expect_json=True)
+            if not res or "question" not in res:
+                return logger.warning("post_quiz: AI error")
+
+            options = [res["correct"], res["wrong1"], res["wrong2"], res["wrong3"]]
+            # Shuffle options
+            import random
+            random.shuffle(options)
+            correct_id = options.index(res["correct"])
+
+            await self.bot.send_poll(
+                chat_id=config.CHANNEL_ID,
+                question=res["question"],
+                options=options,
+                type="quiz",
+                correct_option_id=correct_id,
+                explanation=_escape_md(res.get("explanation", "")),
+                explanation_parse_mode="Markdown",
+                is_anonymous=False
+            )
+            await db.save_channel_post("quiz", res["question"][:100], res["question"], None, 0)
+            logger.info("Quiz post sent.")
+        except Exception as e:
+            logger.error(f"post_quiz error: {e}", exc_info=True)
+
+    async def post_guess_movie(self):
+        """Сб 15:00 — 'Впізнай фільм' (Питання)."""
+        try:
+            res = await ai_service.ask(GUESS_MOVIE_PROMPT, expect_json=True)
+            if not res or "title" not in res:
+                return logger.warning("post_guess_movie: AI error")
+
+            # Шукаємо фільм у TMDB для постера
+            search = await tmdb_service.search_movie(res["title"])
+            if not search:
+                return logger.warning(f"post_guess_movie: movie not found in TMDB: {res['title']}")
+
+            movie = search[0]
+            poster_path = movie.get("poster_path")
+            poster_url = tmdb_service.get_poster_url(poster_path)
+
+            text = (
+                f"🧩 *Впізнай фільм за описом!*\n\n"
+                f"1️⃣ {_escape_md(res['hint1'])}\n"
+                f"2️⃣ {_escape_md(res['hint2'])}\n"
+                f"3️⃣ {_escape_md(res['hint3'])}\n\n"
+                f"💬 Пишіть ваші здогадки у коментарях! Відповідь буде за 2 години."
+            )
+
+            # Можна було б обрізати картинку, але AI-генератор поки не вміє "кропати" TMDB-постери.
+            # Для MVP надішлемо розмиту картинку або просто текст + emoji.
+            # Але краще згенерувати абстрактну картинку за жанром.
+            # image_url = await image_generator.generate_image(f"Abstract cinematic art for {res['title']} movie theme")
+            
+            # Поки відправимо просто з емодзі, або якщо є постер - надішлемо його (але це спойлер).
+            # Спробуємо надіслати без картинки або з генерованою.
+            
+            bot_msg = await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
+            
+            # Зберігаємо відповідь у базу, щоб post_guess_answer міг її дістати
+            import json
+            payload = json.dumps({
+                "title": res["title"],
+                "year": res["year"],
+                "fun_fact": res["fun_fact"],
+                "poster": poster_url
+            })
+            await db.save_channel_post("guess_movie_question", res["title"], payload, movie.get("id"), bot_msg.message_id)
+            logger.info(f"Guess movie question sent: {res['title']}")
+        except Exception as e:
+            logger.error(f"post_guess_movie error: {e}", exc_info=True)
+
+    async def post_guess_answer(self):
+        """Сб 17:00 — 'Впізнай фільм' (Відповідь)."""
+        try:
+            # Дістаємо останнє питання
+            last_q = await db.get_recent_post_by_type("guess_movie_question")
+            if not last_q:
+                return
+
+            import json
+            data = json.loads(last_q["text_full"]) # Ми зберегли JSON в text_full
+            
+            text = (
+                f"✅ *Правильна відповідь: {data['title']} ({data['year']})*\n\n"
+                f"💡 *Цікавий факт:* {_escape_md(data['fun_fact'])}\n\n"
+                f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
+            )
+
+            keyboard = await _build_watch_keyboard(last_q["tmdb_id"], data["title"])
+
+            if data.get("poster"):
+                await self.bot.send_photo(
+                    chat_id=config.CHANNEL_ID,
+                    photo=data["poster"],
+                    caption=text,
+                    parse_mode="Markdown",
+                    reply_to_message_id=last_q["message_id"],
+                    reply_markup=keyboard
+                )
+            else:
+                await self.bot.send_message(
+                    chat_id=config.CHANNEL_ID,
+                    text=text,
+                    parse_mode="Markdown",
+                    reply_to_message_id=last_q["message_id"],
+                    reply_markup=keyboard
+                )
+            
+            await db.save_channel_post("guess_movie_answer", data["title"], text, last_q["tmdb_id"], 0)
+            logger.info(f"Guess movie answer sent: {data['title']}")
+        except Exception as e:
+            logger.error(f"post_guess_answer error: {e}", exc_info=True)
+
+    async def post_taste_poll(self):
+        """Чт 20:00 — Опитування про смаки."""
+        try:
+            questions = [
+                "Який жанр сьогодні під настрій?",
+                "Що краще: старе кіно чи новинки?",
+                "Серіал на вечір чи повний метр?",
+                "Який стрімінг ваш улюблений?"
+            ]
+            import random
+            q = random.choice(questions)
+            
+            options = []
+            if "жанр" in q:
+                options = ["🍿 Бойовик", "😱 Жахи", "🎭 Драма", "🤡 Комедія"]
+            elif "старе" in q:
+                options = ["📽 Класика", "🆕 Тільки нове", "🌓 Під настрій"]
+            elif "Серіал" in q:
+                options = ["📺 Серіал", "🎬 Фільм", "🎞 Аніме"]
+            else:
+                options = ["Netflix", "HBO Max", "Disney+", "Apple TV+"]
+
+            await self.bot.send_poll(
+                chat_id=config.CHANNEL_ID,
+                question=q,
+                options=options,
+                is_anonymous=False,
+                allows_multiple_answers=False
+            )
+            logger.info(f"Taste poll sent: {q}")
+        except Exception as e:
+            logger.error(f"post_taste_poll error: {e}", exc_info=True)

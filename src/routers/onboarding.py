@@ -35,6 +35,9 @@ async def start_onboarding(message: types.Message, state: FSMContext):
 # FIX: added OnboardingStates.GENRES filter — prevents stale buttons from triggering
 @router.callback_query(F.data.startswith("genre_"), OnboardingStates.GENRES)
 async def cb_genre_select(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     data = await state.get_data()
     selected = set(data.get("genres", []))
     genre = callback.data.replace("genre_", "")
@@ -51,6 +54,9 @@ async def cb_genre_select(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "onboarding_genres_done", OnboardingStates.GENRES)
 async def cb_genres_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     data = await state.get_data()
     selected = data.get("genres", [])
 
@@ -63,13 +69,16 @@ async def cb_genres_done(callback: types.CallbackQuery, state: FSMContext):
             "Крок 2/3: Як часто дивишся кіно? 🍿",
             reply_markup=get_onboarding_frequency_kb()
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to edit frequency message: {e}")
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("freq_"), OnboardingStates.FREQUENCY)
 async def cb_freq_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     freq = callback.data.replace("freq_", "")
     await state.update_data(frequency=freq)
 
@@ -83,6 +92,9 @@ async def cb_freq_done(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("period_"), OnboardingStates.PERIOD)
 async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     period = callback.data.replace("period_", "")
     data = await state.get_data()
     genres = data.get("genres", [])
@@ -128,6 +140,6 @@ async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(welcome_back, reply_markup=get_main_menu_kb(has_premium), parse_mode="HTML")
     try:
         await callback.message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete onboarding message: {e}")
     await callback.answer()

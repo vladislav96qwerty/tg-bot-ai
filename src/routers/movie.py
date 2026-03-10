@@ -15,6 +15,9 @@ from src.config import config
 router = Router()
 logger = logging.getLogger(__name__)
 
+# Проста захист від флуду пошуку
+_search_cooldown = {}
+
 
 async def is_premium(user_id: int, bot: any) -> bool:
     """Checks if user has premium (is channel member or sponsor)."""
@@ -237,6 +240,16 @@ async def text_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is not None:
         return
+    
+    # Проста захист від флуду пошуку
+    import time
+    user_id = message.from_user.id
+    now = time.time()
+    if now - _search_cooldown.get(user_id, 0) < 3:
+        await message.answer("⏳ Зачекайте 3 секунди між пошуками")
+        return
+    _search_cooldown[user_id] = now
+    
     await perform_search(message, message.text.strip(), state)
 
 
@@ -263,6 +276,9 @@ async def perform_search(message: types.Message, query: str, state: FSMContext):
 
 @router.callback_query(F.data.startswith("movie_id:"))
 async def cb_movie_details(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Handler for displaying movie card."""
     movie_id = int(callback.data.split(":")[1])
     await callback.answer()
@@ -272,12 +288,24 @@ async def cb_movie_details(callback: types.CallbackQuery):
     await show_movie_details(callback.message, movie_id, edit=False, user_id=callback.from_user.id)
     try:
         await old_msg.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Помилка: {e}")
+
+
+@router.callback_query(F.data.startswith("rate:"))
+async def cb_rate_movie(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
+    movie_id = int(callback.data.split(":")[1])
+    await callback.answer() # Placeholder for actual rating logic
 
 
 @router.callback_query(F.data.startswith("similar:"))
 async def cb_similar_movies(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Handler for 'Similar movies' button."""
     movie_id = int(callback.data.split(":")[1])
     await callback.answer("🎬 Шукаю схожі фільми...")
@@ -314,8 +342,13 @@ async def cb_similar_movies(callback: types.CallbackQuery):
         )
 
 
+
+
 @router.callback_query(F.data == "back_to_search")
 async def cb_back_to_search(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     """Returns user to their previous search results."""
     data = await state.get_data()
     query = data.get("last_query")

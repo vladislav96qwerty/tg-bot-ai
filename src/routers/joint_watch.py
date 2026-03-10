@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "menu_together")
 async def joint_watch_menu(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     if not await is_premium(callback.from_user.id, callback.bot):
         return await callback.answer(
             "🔒 Спільний перегляд доступний тільки підписникам!", show_alert=True
@@ -39,6 +42,9 @@ async def joint_watch_menu(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "joint_create")
 async def create_joint_session(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     try:
         session_id = str(uuid.uuid4())[:8]
         await db.create_watch_session(session_id, callback.from_user.id)
@@ -75,6 +81,9 @@ async def create_joint_session(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("joint_start:"))
 async def start_joint_swipe(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     try:
         session_id = callback.data.split(":")[1]
         await show_next_joint_movie(callback, session_id)
@@ -101,6 +110,7 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
         voted_ids = await db.get_session_voted_ids(session_id, callback.from_user.id)
         
         # Filter available movies
+        movies = await tmdb_service.get_popular_movies(page=random.randint(1, 10))
         available = [m for m in movies if m.get("id") not in voted_ids]
         
         if not available:
@@ -158,8 +168,8 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
         # Видаляємо попереднє повідомлення AFTER відправки нового
         try:
             await old_msg.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to delete old joint message: {e}")
             
     except Exception as e:
         logger.error(f"Error showing next joint movie: {e}")
@@ -174,6 +184,9 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
 @router.callback_query(F.data.startswith("joint_vote:"))
 async def handle_joint_vote(callback: types.CallbackQuery):
     """Обробка голосування в спільній сесії"""
+    if not callback.message:
+        await callback.answer()
+        return
     try:
         # Розбираємо callback_data
         parts = callback.data.split(":")
@@ -218,7 +231,7 @@ async def handle_joint_vote(callback: types.CallbackQuery):
                                 creator_id, match_text, parse_mode="HTML"
                             )
                         except Exception as e:
-                            logger.error(f"Failed to notify creator: {e}")
+                            logger.error(f"Failed to notify creator {creator_id}: {e}")
                     
                     await callback.answer("💖 МЕТ'Ч!", show_alert=True)
                     return

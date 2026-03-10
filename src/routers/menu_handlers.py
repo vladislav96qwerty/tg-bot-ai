@@ -66,6 +66,9 @@ async def _edit_menu(callback: types.CallbackQuery, open_cat: str | None = None)
 @router.callback_query(F.data.startswith("cat_open:"))
 async def cb_cat_open(callback: types.CallbackQuery):
     """Розкриває обрану категорію."""
+    if not callback.message:
+        await callback.answer()
+        return
     key = callback.data.split(":")[1]
     await _edit_menu(callback, open_cat=key)
     await callback.answer()
@@ -74,6 +77,9 @@ async def cb_cat_open(callback: types.CallbackQuery):
 @router.callback_query(F.data == "cat_close")
 async def cb_cat_close(callback: types.CallbackQuery):
     """Закриває поточну категорію."""
+    if not callback.message:
+        await callback.answer()
+        return
     await _edit_menu(callback, open_cat=None)
     await callback.answer()
 
@@ -84,6 +90,9 @@ async def cb_cat_close(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_search")
 async def cb_menu_search(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     text = (
         "🔍 <b>Пошук фільму</b>\n\n"
         "Просто напиши назву фільму текстом — "
@@ -124,6 +133,9 @@ MOOD_LABELS = {
 
 @router.callback_query(F.data == "menu_mood")
 async def cb_menu_mood(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     has_premium = await is_premium(user_id, callback.bot)
 
@@ -165,6 +177,9 @@ async def cb_menu_mood(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("mood_pick:"))
 async def cb_mood_pick(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     mood_key = callback.data.split(":")[1]
     mood_label = MOOD_LABELS.get(mood_key, mood_key)
     user_id = callback.from_user.id
@@ -176,8 +191,8 @@ async def cb_mood_pick(callback: types.CallbackQuery):
             "Зачекай трішки ⏳",
             parse_mode="HTML",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Mood pick edit failed: {e}")
 
     try:
         popular = await tmdb_service.get_popular(page=1)
@@ -209,8 +224,8 @@ async def cb_mood_pick(callback: types.CallbackQuery):
                     ]),
                     parse_mode="HTML"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Помилка відображення повідомлення про відсутність фільмів: {e}")
             return
 
         text = f"🧠 <b>Настрій: {mood_label}</b>\n\n"
@@ -263,8 +278,8 @@ async def cb_mood_pick(callback: types.CallbackQuery):
                 ]),
                 parse_mode="HTML"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Помилка відображення меню: {e}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -273,6 +288,9 @@ async def cb_mood_pick(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_ratings")
 async def cb_menu_ratings(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     ratings = await db.get_user_ratings_list(user_id)
 
@@ -301,6 +319,9 @@ async def cb_menu_ratings(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_stats")
 async def cb_menu_stats(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     has_premium = await is_premium(user_id, callback.bot)
 
@@ -340,6 +361,9 @@ async def cb_menu_stats(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_leaderboard")
 async def cb_menu_leaderboard(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     has_premium = await is_premium(user_id, callback.bot)
 
@@ -385,6 +409,9 @@ ACHIEVEMENT_INFO = {
 
 @router.callback_query(F.data == "menu_achievements")
 async def cb_menu_achievements(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     has_premium = await is_premium(user_id, callback.bot)
 
@@ -422,6 +449,9 @@ async def cb_menu_achievements(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_notifications")
 async def cb_menu_notifications(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     user = await db.get_user(user_id)
     if not user:
@@ -454,6 +484,9 @@ async def cb_menu_notifications(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_help")
 async def cb_menu_help(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     channel = config.CHANNEL_USERNAME.replace("@", "")
     text = (
         "❓ <b>Допомога — НеНетфліксБот</b>\n\n"
@@ -520,6 +553,9 @@ async def cb_menu_donate(event: types.Message | types.CallbackQuery):
 
 @router.callback_query(F.data == "confirm_donate")
 async def confirm_donate(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     safe_name = html.escape(callback.from_user.full_name)
     safe_username = html.escape(callback.from_user.username or "—")
@@ -555,6 +591,9 @@ async def confirm_donate(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_referral")
 async def cb_menu_referral(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     bot_username = (await callback.bot.get_me()).username
     ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
@@ -584,6 +623,9 @@ async def cb_menu_referral(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu_feedback")
 async def cb_menu_feedback(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     """Вхідна точка скриньки зворотного зв'язку."""
     await state.set_state(FeedbackStates.CHOOSING_TYPE)
     text = (
@@ -605,6 +647,9 @@ async def cb_menu_feedback(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("feedback_type:"), FeedbackStates.CHOOSING_TYPE)
 async def cb_feedback_type(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     fb_type = callback.data.split(":")[1]
     type_labels = {"bug": "🐛 Баг", "suggestion": "💡 Пропозиція", "other": "💬 Інше"}
     label = type_labels.get(fb_type, fb_type)
@@ -676,6 +721,9 @@ async def handle_feedback_text(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "feedback_cancel")
 async def cb_feedback_cancel(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     """Скасовує введення зворотного зв'язку."""
     await state.clear()
     user_id = callback.from_user.id
@@ -701,6 +749,9 @@ async def cb_feedback_cancel(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "menu_top_movies")
 async def cb_top_movies(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Entry point for community top movies."""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -727,6 +778,9 @@ async def cb_top_movies(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("top_period:"))
 async def cb_top_movies_period(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Shows top movies for selected period."""
     period = callback.data.split(":")[1]
     await callback.answer("⏳ Завантажую...")
@@ -804,6 +858,9 @@ async def cb_save_quote(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "my_saved_quotes")
 async def cb_my_saved_quotes(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Показує список збережених цитат."""
     user_id = callback.from_user.id
     quotes = await db.get_saved_quotes(user_id, limit=15)

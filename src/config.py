@@ -36,6 +36,8 @@ class Config:
             "TMDB_API_KEY":     self.TMDB_API_KEY,
             "TURSO_DATABASE_URL": self.TURSO_DATABASE_URL,
             "TURSO_AUTH_TOKEN":   self.TURSO_AUTH_TOKEN,
+            "MONO_CARD":        self.MONO_CARD,
+            "MONO_NAME":        self.MONO_NAME,
         }
         missing = [k for k, v in required.items() if not v]
         if missing:

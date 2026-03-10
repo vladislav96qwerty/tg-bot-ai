@@ -10,7 +10,9 @@ from aiogram.types import (
     KeyboardButton,
 )
 
+from datetime import datetime
 from src.database.db import db
+from src.config import config
 from src.keyboards.main_menu import get_main_menu_kb, get_onboarding_genres_kb
 from src.routers.onboarding import OnboardingStates
 
@@ -50,8 +52,8 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
                             referrer_id,
                             "👥 Новий друг приєднався за твоїм посиланням! (+1 реферал)",
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to notify referrer: {e}")
             except (IndexError, ValueError):
                 pass
 
@@ -117,6 +119,9 @@ async def cmd_help(message: types.Message):
 
 @router.callback_query(F.data == "back_to_menu")
 async def cb_back_to_menu(callback: types.CallbackQuery, state: FSMContext = None):
+    if not callback.message:
+        await callback.answer()
+        return
     if state:
         await state.clear()
     
@@ -135,8 +140,8 @@ async def cb_back_to_menu(callback: types.CallbackQuery, state: FSMContext = Non
     if callback.message.photo or callback.message.video or callback.message.document:
         try:
             await callback.message.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to delete old menu message: {e}")
         await callback.message.answer(menu_text, reply_markup=markup, parse_mode="HTML")
     else:
         try:
@@ -149,12 +154,27 @@ async def cb_back_to_menu(callback: types.CallbackQuery, state: FSMContext = Non
 
 @router.callback_query(F.data == "subscribe_check")
 async def cb_subscribe_check_real(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     """Реальна перевірка підписки після натиснення «Я підписався»."""
-    from src.routers.movie import is_premium
-    from src.keyboards.main_menu import get_main_menu_kb
-
     user_id = callback.from_user.id
-    is_sub = await is_premium(user_id, callback.bot)
+    # Перевіряємо напряму через Telegram API, без кешу
+    try:
+        member = await callback.bot.get_chat_member(
+            chat_id=config.CHANNEL_ID,
+            user_id=user_id
+        )
+        is_sub = member.status in ["member", "administrator", "creator"]
+        # Оновлюємо кеш після реальної перевірки
+        await db.update_user(
+            user_id,
+            channel_member_checked_at=datetime.now().isoformat(),
+            channel_member_status="member" if is_sub else "left",
+        )
+    except Exception as e:
+        logger.error(f"subscribe_check error: {e}")
+        is_sub = False
 
     if is_sub:
         await callback.answer(

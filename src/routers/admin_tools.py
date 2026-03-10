@@ -78,6 +78,9 @@ async def admin_panel(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "admin_panel", admin_filter)
 async def cb_admin_panel(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     await state.clear()
     try:
         await callback.message.edit_text(
@@ -85,7 +88,8 @@ async def cb_admin_panel(callback: types.CallbackQuery, state: FSMContext):
             reply_markup=_admin_menu_kb(),
             parse_mode="HTML",
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"Помилка редагування адмін-панелі: {e}")
         await callback.message.answer(
             "🛠 <b>Адмін-panel</b>\n\nОберіть дію для керування ботом та каналом:",
             reply_markup=_admin_menu_kb(),
@@ -96,6 +100,9 @@ async def cb_admin_panel(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "delete_msg", admin_filter)
 async def cb_delete_msg(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     await callback.message.delete()
     await callback.answer()
 
@@ -104,6 +111,9 @@ async def cb_delete_msg(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "admin_create_battle", admin_filter)
 async def admin_create_battle(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     movies = await tmdb_service.get_popular_movies(page=random.randint(1, 5))
     movies = [m for m in movies if m.get("title")]
     if len(movies) < 2:
@@ -147,6 +157,9 @@ async def admin_create_battle(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "admin_stats", admin_filter)
 async def admin_stats(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     stats = await db.get_admin_stats()
     if not stats:
         await callback.answer("Помилка отримання статистики.")
@@ -174,6 +187,9 @@ async def admin_stats(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "admin_broadcast", admin_filter)
 async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     await state.set_state(BroadcastStates.waiting_content)
     await callback.message.edit_text(
         "📢 <b>Надішліть повідомлення для розсилки.</b>\n\n"
@@ -238,8 +254,8 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
                 await callback.message.edit_text(
                     f"⏳ Розсилка: оброблено {i}/{total_users}..."
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Помилка: {e}")
 
     await state.clear()
     await callback.message.answer(
@@ -258,6 +274,9 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
 
 @router.callback_query(F.data == "admin_user_manage", admin_filter)
 async def user_manage_start(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
     await state.set_state(UserSearchStates.waiting_query)
     await callback.message.edit_text(
         "👤 <b>Введіть ID або @username користувача для пошуку:</b>",
@@ -370,8 +389,8 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 "красується медаль <b>Спонсора</b> 🏆.\nДякуємо за підтримку проєкту!",
                 parse_mode="HTML",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
 
     elif action == "points100":
         await db.admin_add_points(callback.from_user.id, user_id, 100, "Admin bonus")
@@ -383,8 +402,8 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 "Дякуємо, що ти з нами!",
                 parse_mode="HTML",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
 
     elif action == "points500":
         await db.admin_add_points(callback.from_user.id, user_id, 500, "Loyalty bonus")
@@ -395,8 +414,8 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 "💰 <b>Мега-бонус!</b>\n\nТобі нараховано <b>+500</b> балів за лояльність! 🎬",
                 parse_mode="HTML",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
 
     elif action == "reject_donate":
         await callback.answer("❌ Запит відхилено")
@@ -407,8 +426,8 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 "Адміністратор не зміг підтвердити ваш переказ.",
                 parse_mode="HTML",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Помилка надсилання повідомлення про відхилення донату: {e}")
 
     elif action == "ban":
         await state.set_state(UserSearchStates.waiting_ban_reason)
@@ -489,6 +508,9 @@ async def process_admin_msg(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "admin_log", admin_filter)
 async def view_admin_log(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     logs = await db.get_admin_log(limit=15)
     if not logs:
         return await callback.answer("Лог порожній", show_alert=True)
@@ -502,6 +524,9 @@ async def view_admin_log(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "admin_feedback", admin_filter)
 async def view_feedback(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     items = await db.get_feedback_list(status="new", limit=10)
     if not items:
         return await callback.answer("📭 Нових повідомлень немає", show_alert=True)
@@ -516,6 +541,9 @@ async def view_feedback(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("feedback_view:"), admin_filter)
 async def view_single_feedback(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     fb_id = int(callback.data.split(":")[1])
     item = await db.get_feedback_by_id(fb_id)
     if not item:
@@ -540,6 +568,9 @@ async def view_single_feedback(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("feedback_status:"), admin_filter)
 async def handle_feedback_status(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
     parts = callback.data.split(":")
     fb_id = int(parts[1])
     # ✅ FIX #4: читаємо статус з callback_data ("feedback_status:42:done")

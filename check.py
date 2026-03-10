@@ -1,9 +1,9 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║        NeNetflixBot — ULTIMATE STATIC CHECKER v5                           ║
+║        NeNetflixBot — ULTIMATE STATIC CHECKER v7                           ║
 ║  Запускати з кореня проекту:  python check.py                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  БЛОК A — СТАТИЧНИЙ АНАЛІЗ КОДУ (A01-A38)                                  ║
+║  БЛОК A — СТАТИЧНИЙ АНАЛІЗ КОДУ (A01-A45)                                  ║
 ║  БЛОК B — СИМУЛЯЦІЯ КОРИСТУВАЧА (кожна кнопка, включно v2.0)               ║
 ║  БЛОК C — СИМУЛЯЦІЯ АДМІНА (включно User Management v2.0)                  ║
 ║  БЛОК D — MIDDLEWARE                                                        ║
@@ -148,7 +148,7 @@ def a02_imports():
             "src.middlewares.subscription", "src.services.scheduler"
         ],
         "src/config.py": ["dotenv", "os"],
-        "src/database/db.py": ["aiosqlite", "src.database.schema"],
+        "src/database/db.py": ["libsql_client", "src.database.schema"],
         "src/services/ai.py": ["groq", "google", "src.config"],
         "src/services/tmdb.py": ["aiohttp", "src.config"],
         "src/services/scheduler.py": [
@@ -750,23 +750,30 @@ def a29_blocking_calls():
 
 def a30_missing_await():
     hdr("A30 - МОЖЛИВИЙ MISSING AWAIT")
-
-    # ВИПРАВЛЕНО: додано \b та ігнорування 'async with' (який стоїть перед db.execute)
-    pattern = r'(?<!await\s)(?<!async\s)with\s\b(db|tmdb_service|ai_service)\.\w+\(' # matches 'with db.execute('
-    # Actually the pattern should probably just ignore lines starting with 'async with' or look for 'await'
-    # Let's use a more robust regex that ignores 'async with'
-    pattern = r'(?<!await\s)(?<!async\swith\s)\b(db|tmdb_service|ai_service)\.(?!get_poster_url)\w+\('
-
+    # Рядковий підхід: шукаємо виклики сервісів без await на тому ж рядку
+    SERVICES = ("db.", "tmdb_service.", "ai_service.")
+    SYNC_OK  = ("get_poster_url", "build_justwatch_url", "PROVIDER_MAP",
+                "BLACKLISTED_PROVIDERS", "IMAGE_BASE_URL", "BASE_URL", "api_key")
     found = False
-
     for fpath, s in FILES.items():
-        s = strip_comments(s)
-
-        for m in re.finditer(pattern, s):
-            line = s[:m.start()].count("\n") + 1
-            warn(f"{fpath.split('/')[-1]}:{line} можливий missing await")
-            found = True
-
+        s_clean = strip_comments(s)
+        for lineno, line in enumerate(s_clean.split('\n'), 1):
+            st = line.strip()
+            if not st or st.startswith(('#', '"', "'")):
+                continue
+            if st.startswith(('async with', 'async def', 'def ', 'class ')):
+                continue
+            for svc in SERVICES:
+                if svc not in st:
+                    continue
+                if any(m in st for m in SYNC_OK):
+                    continue
+                if 'await' not in st and '=' not in st.split(svc)[0].strip():
+                    # відфільтровуємо присвоєння self.tmdb_service = ...
+                    if not re.match(r'(self\.)?\w+\s*=\s*', st.split(svc)[0]):
+                        warn(f"{fpath.split('/')[-1]}:{lineno} можливий missing await -> {st[:70]}")
+                        found = True
+                        break
     if not found:
         ok("Missing await не знайдено")
 
@@ -835,8 +842,8 @@ def a33_saved_quotes():
             "delete_saved_quote" in db_s),
         ("scheduler.py: md5 або hashlib для ключа цитати",
             "hashlib" in sched_s or "md5" in sched_s),
-        ("scheduler.py: post_type='quote_data' для пошуку",
-            "quote_data" in sched_s),
+        ("scheduler.py: post_type='quote_cache' для пошуку",
+            "quote_cache" in sched_s),
         ("menu_handlers.py: savequote: callback",
             "savequote" in mh_s),
         ("menu_handlers.py: del_quote: callback",
@@ -1054,6 +1061,150 @@ def a38_rate_limit_protection():
         ok("Базовий захист від флуду присутній")
 
 
+def a39_empty_routers():
+    hdr("A39 - ПОРОЖНI РОУТЕРИ (файл є але обробникiв немає)")
+    for rpath in ROUTERS:
+        s = src(rpath)
+        if not s:
+            continue  # A01 вже звiтує про вiдсутнiсть
+        name = rpath.split("/")[-1]
+        handlers = re.findall(r'@router\.(message|callback_query|poll_answer)', s)
+        if not handlers:
+            err(f"{name}: роутер пiдключено в main.py, але НЕ МАЄ жодного @router-хендлера — мертвий код!")
+        else:
+            ok(f"{name}: {len(handlers)} хендлер(iв)")
+
+
+def a40_callback_message_none():
+    hdr("A40 - callback.message БЕЗ None-GUARD")
+    for rpath in ROUTERS:
+        s = src(rpath)
+        name = rpath.split("/")[-1].replace(".py", "")
+        for m in re.finditer(
+            r'async def (\w+)\([^)]*(?:callback)[^)]*\)(.*?)(?=\nasync def |\Z)',
+            s, re.DOTALL
+        ):
+            func_name, body = m.group(1), m.group(2)
+            uses_cb_message = bool(re.search(r'callback\.message\.\w+\(', body))
+            has_guard = bool(re.search(
+                r'if\s+(?:not\s+)?callback\.message|callback\.message\s+is\s+(?:not\s+)?None',
+                body
+            ))
+            # FIX: якщо весь виклик callback.message обгорнутий у try/except — теж захищено
+            has_try_wrap = bool(re.search(r'try:.*callback\.message\.\w+\(', body, re.DOTALL))
+            if uses_cb_message and not has_guard and not has_try_wrap:
+                count = len(re.findall(r'callback\.message\.\w+\(', body))
+                warn(f"{name}.{func_name}(): callback.message використовується {count}x без None-guard")
+
+
+def a41_silent_exceptions():
+    hdr("A41 - ТИХI ВИКЛЮЧЕННЯ (except...pass без логування)")
+    found = False
+    for fpath, s in FILES.items():
+        name = fpath.split("/")[-1]
+        for m in re.finditer(r'except[^:]*:\s*\n(\s+)(pass|continue)\s*\n', s):
+            start = m.end()
+            next_lines = s[start:start + 80]
+            if 'logger' not in next_lines:
+                ln = s[:m.start()].count('\n') + 1
+                warn(f"{name}:{ln} — except без логування (pass) — помилка зникне непомiченою")
+                found = True
+    if not found:
+        ok("Тихих виключень не знайдено")
+
+
+def a42_requirements():
+    hdr("A42 - requirements.txt — НАЯВНIСТЬ ТА КЛЮЧОВI ПАКЕТИ")
+    req_path = ROOT / "requirements.txt"
+    REQUIRED_PACKAGES = [
+        "aiogram", "aiohttp", "apscheduler", "cachetools",
+        "groq", "google-generativeai", "libsql-client",
+        "Pillow", "python-dotenv",
+    ]
+    if not req_path.exists():
+        err("requirements.txt не знайдено — деплой може впасти через вiдсутнi пакети!")
+        info("Потрiбнi пакети: " + ", ".join(REQUIRED_PACKAGES))
+        return
+    req_text = req_path.read_text(encoding="utf-8", errors="replace").lower()
+    ok("requirements.txt знайдено")
+    for pkg in REQUIRED_PACKAGES:
+        if pkg.lower().replace("-", "_") in req_text.replace("-", "_"):
+            ok(f"  {pkg}")
+        else:
+            warn(f"  {pkg} — не знайдено в requirements.txt!")
+
+
+
+def a43_subscription_cache_bug():
+    hdr("A43 - КЕШ ПІДПИСКИ -- статус перевіряється при поверненні з кешу")
+    mw = src("src/middlewares/subscription.py")
+    # Шукаємо блок де є timedelta < 1 hour і поруч перевіряється channel_member_status
+    cache_block = re.search(
+        r'timedelta[^\n]*hour[^\n]*\)(.*?)(?=is_subscribed|_check_subscription)',
+        mw, re.DOTALL
+    )
+    if cache_block:
+        block = cache_block.group(1)
+        if "channel_member_status" in block or "member_status" in block:
+            ok("Кеш перевіряє channel_member_status -- відписані блокуються")
+        else:
+            err(
+                "КЕШ-БАГ: middleware бачить свіжий кеш і пускає юзера НЕ перевіряючи статус! "
+                "Відписаний юзер до 1 год має доступ. "
+                "Виправлення: у блоці 'if datetime.now() - last_checked < timedelta' "
+                "додати: 'if user_db.get(\"channel_member_status\") == \"member\": return await handler(...)'"
+            )
+    else:
+        warn("A43: не вдалось знайти блок кешу підписки")
+
+
+def a44_morning_movie_photo():
+    hdr("A44 - РАНКОВИЙ ПОСТ -- використовує send_photo (не лише текст)")
+    ss = src("src/services/scheduler.py")
+    morning_match = re.search(
+        r'async def post_morning_movie\(self\)(.*?)(?=\n    async def |\Z)', ss, re.DOTALL
+    )
+    if not morning_match:
+        warn("A44: post_morning_movie не знайдено")
+        return
+    body = morning_match.group(1)
+    if "send_photo" in body:
+        ok("post_morning_movie використовує send_photo -- пост з постером фільму")
+    else:
+        err(
+            "post_morning_movie використовує лише send_message без постера! "
+            "Інші пости (controversial, hidden_gem) мають фото, ранковий — ні. "
+            "Виправлення: додати send_photo з poster_url як у post_controversial"
+        )
+
+
+def a45_markdown_escape():
+    hdr("A45 - MARKDOWN ESCAPE -- AI-текст екранується перед публікацією")
+    ss = src("src/services/scheduler.py")
+    # Шукаємо функцію _escape_md або re.escape або .replace для * та _
+    has_escape_fn = bool(re.search(r'def _escape_md|escape_md', ss))
+    # Перевіряємо чи є хоч якесь екранування
+    has_replace_escape = bool(re.search(r"\.replace\(['\"][\*_\[\]`]['\"]", ss))
+    # Шукаємо функції що використовують Markdown і вставляють AI res['...']
+    md_funcs = re.findall(
+        r'async def (post_\w+)\(self\).*?parse_mode=["\']Markdown["\']',
+        ss, re.DOTALL
+    )
+    if has_escape_fn:
+        ok("_escape_md функція присутня -- AI текст захищений від зламаного Markdown")
+    elif has_replace_escape:
+        ok("Markdown-символи екрануються через .replace()")
+    else:
+        if md_funcs:
+            err(
+                f"Функції {md_funcs} використовують parse_mode=Markdown з AI-текстом без екранування! "
+                "Якщо AI поверне * або _ у тексті -- Telegram не відправить пост. "
+                "Виправлення: додати функцію _escape_md() і обгорнути всі res['...'] поля"
+            )
+        else:
+            ok("Markdown без AI-тексту -- екранування не потрібне")
+
+
 def e_env_check():
     hdr("БЛОК E -- ПЕРЕВIРКА .env ФАЙЛУ")
     env_path = ROOT / ".env"
@@ -1061,7 +1212,9 @@ def e_env_check():
 
     REQUIRED_KEYS = [
         "BOT_TOKEN", "CHANNEL_ID", "GROQ_API_KEY",
-        "TMDB_API_KEY", "GEMINI_API_KEY", "ADMIN_ID"
+        "TMDB_API_KEY", "GEMINI_API_KEY", "ADMIN_IDS",
+        "TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN",
+        "MONO_CARD", "MONO_NAME",
     ]
 
     if not env_path.exists():
@@ -1373,7 +1526,7 @@ def d_middleware():
 
 if __name__ == "__main__":
     print(f"\n{BO}{'='*72}")
-    print(f"  NeNetflixBot -- ULTIMATE CHECKER v5")
+    print(f"  NeNetflixBot -- ULTIMATE CHECKER v7")
     print(f"  Файлiв знайдено: {len(FILES)}   |   Корiнь: {ROOT}")
     print(f"{'='*72}{R}")
 
@@ -1417,6 +1570,14 @@ if __name__ == "__main__":
     a36_user_management_v2()
     a37_top_movies()
     a38_rate_limit_protection()
+    # v3.0 нові перевірки
+    a39_empty_routers()
+    a40_callback_message_none()
+    a41_silent_exceptions()
+    a42_requirements()
+    a43_subscription_cache_bug()
+    a44_morning_movie_photo()
+    a45_markdown_escape()
 
     # Блок B: симуляцiя користувача
     b_user_simulation()
