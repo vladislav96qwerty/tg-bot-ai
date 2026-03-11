@@ -32,13 +32,7 @@ class UserSearchStates(StatesGroup):
 admin_filter = F.from_user.id.in_(config.ADMIN_IDS)
 
 # ✅ FIX #13: інвалідація кешу юзера після зміни даних адміном
-def _invalidate_user_cache(user_id: int):
-    """Видаляє юзера з кешу middleware щоб зміни відразу вступили в силу."""
-    try:
-        from src.middlewares.subscription import _user_cache
-        _user_cache.pop(user_id, None)
-    except (ImportError, AttributeError):
-        pass  # кеш ще не створено — ок
+from src.middlewares.subscription import invalidate_user_cache as _invalidate_user_cache
 
 # ✅ FIX #23: флаг для зупинки розсилки
 _broadcast_cancel = {}

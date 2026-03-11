@@ -46,6 +46,8 @@ async def is_premium(user_id: int, bot: any) -> bool:
     user_db = _user_cache.get(user_id)
     if not user_db:
         user_db = await db.get_user(user_id)
+        if user_db:
+            _user_cache[user_id] = user_db
     if not user_db:
         return False
 
