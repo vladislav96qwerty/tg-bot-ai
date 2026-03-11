@@ -167,11 +167,14 @@ async def cb_subscribe_check_real(callback: types.CallbackQuery):
         )
         is_sub = member.status in ["member", "administrator", "creator"]
         # Оновлюємо кеш після реальної перевірки
+        from src.middlewares.subscription import invalidate_user_cache
+        
         await db.update_user(
             user_id,
             channel_member_checked_at=datetime.now().isoformat(),
             channel_member_status="member" if is_sub else "left",
         )
+        invalidate_user_cache(user_id)
     except Exception as e:
         logger.error(f"subscribe_check error: {e}")
         is_sub = False

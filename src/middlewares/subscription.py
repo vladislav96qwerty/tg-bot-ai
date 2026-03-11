@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 _user_cache = {}
 
 
+def invalidate_user_cache(user_id: int):
+    """Видаляє користувача з кешу, щоб при наступному запиті дані підтягнулися з БД."""
+    _user_cache.pop(user_id, None)
+    logger.debug(f"User cache invalidated for ID: {user_id}")
+
+
 class SubscriptionMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -109,7 +115,7 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="member",
                 )
-                _user_cache.pop(user.id, None) # Оновлюємо кеш
+                _user_cache.pop(user.id, None)  # Оновлюємо кеш через pop, щоб уникнути KeyError
             except Exception as e:
                 logger.error(f"Помилка оновлення статусу підписки: {e}")
             return await handler(event, data)
@@ -120,7 +126,7 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="left",
                 )
-                _user_cache.pop(user.id, None) # Оновлюємо кеш
+                _user_cache.pop(user.id, None)  # Оновлюємо кеш
             except Exception as e:
                 logger.warning(f"Не вдалося оновити статус учасника: {e}")
 
@@ -177,7 +183,8 @@ class SubscriptionMiddleware(BaseMiddleware):
                         text, reply_markup=keyboard, parse_mode="HTML"
                     )
                 except Exception as e:
-                    logger.error(f"Помилка відправки повідомлення підписки: {e}")
+                    if "message is not modified" not in str(e).lower():
+                        logger.error(f"Помилка відправки повідомлення підписки: {e}")
             await event.answer(
                 "Спочатку підпишись на канал! 🎬", show_alert=True
             )

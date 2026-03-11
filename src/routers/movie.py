@@ -69,6 +69,8 @@ async def is_premium(user_id: int, bot: any) -> bool:
                 channel_member_checked_at=datetime.now().isoformat(),
                 channel_member_status="member",
             )
+            from src.middlewares.subscription import invalidate_user_cache
+            invalidate_user_cache(user_id)
             return True
         else:
             # ✅ FIX #3: юзер вийшов/забанений — скидаємо кеш щоб не давати хибний True
@@ -77,6 +79,8 @@ async def is_premium(user_id: int, bot: any) -> bool:
                 channel_member_checked_at=datetime.now().isoformat(),
                 channel_member_status="left",
             )
+            from src.middlewares.subscription import invalidate_user_cache
+            invalidate_user_cache(user_id)
             return False
     except Exception as e:
         logger.error(f"is_premium status error: {e}")
