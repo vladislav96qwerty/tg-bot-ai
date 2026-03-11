@@ -183,7 +183,17 @@ class SubscriptionMiddleware(BaseMiddleware):
                         text, reply_markup=keyboard, parse_mode="HTML"
                     )
                 except Exception as e:
-                    if "message is not modified" not in str(e).lower():
+                    err_str = str(e).lower()
+                    if "message is not modified" in err_str:
+                        pass
+                    elif "there is no text in the message to edit" in err_str:
+                        try:
+                            await event.message.edit_caption(
+                                caption=text, reply_markup=keyboard, parse_mode="HTML"
+                            )
+                        except Exception as e2:
+                            logger.error(f"Помилка редагування опису: {e2}")
+                    else:
                         logger.error(f"Помилка відправки повідомлення підписки: {e}")
             await event.answer(
                 "Спочатку підпишись на канал! 🎬", show_alert=True
