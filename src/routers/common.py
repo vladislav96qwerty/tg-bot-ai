@@ -203,34 +203,23 @@ async def show_main_menu(message: types.Message):
 
     has_premium = await is_premium(message.from_user.id, message.bot)
     safe_name = html.escape(message.from_user.first_name)
+    
     menu_text = (
         f"Привіт, {safe_name}! 👋\n"
         f"Я — <b>Нетік</b>, твій кіногід 🎬\n"
         f"Що шукаємо сьогодні?"
     )
+    
+    # 1. Привітання + головне меню (Inline)
     await message.answer(
-        menu_text, 
-        reply_markup=PERSISTENT_MENU,
-        parse_mode="HTML"
-    )
-    await message.answer(
-        "Обери розділ 👇",
+        menu_text,
         reply_markup=get_main_menu_kb(has_premium),
         parse_mode="HTML"
     )
-    from src.routers.movie import is_premium
-
-    has_premium = await is_premium(message.from_user.id, message.bot)
-    safe_name = html.escape(message.from_user.first_name)
-    menu_text = (
-        f"Привіт, {safe_name}! 👋\n"
-        f"Я — <b>Нетик</b>, твій кіногід 🎬\n"
-        f"Що шукаємо сьогодні?"
-    )
+    
+    # 2. Активуємо нижню Reply-клавіатуру (Persistent)
     await message.answer(
-        menu_text, 
-        reply_markup=get_main_menu_kb(has_premium), 
+        "Обери розділ або просто напиши назву фільму 👇",
+        reply_markup=PERSISTENT_MENU,
         parse_mode="HTML"
     )
-    # Also send the persistent reply keyboard
-    await message.answer("Клавіатура активована ⬇️", reply_markup=PERSISTENT_MENU)
