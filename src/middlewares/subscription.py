@@ -11,6 +11,10 @@ from src.database.db import db
 logger = logging.getLogger(__name__)
 
 
+# Глобальний кеш для зменшення запитів до БД (і для інвалідації з admin_tools)
+_user_cache = {}
+
+
 class SubscriptionMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -36,8 +40,12 @@ class SubscriptionMiddleware(BaseMiddleware):
             if event.data in ["subscribe_check"]:
                 return await handler(event, data)
 
-        # Отримуємо користувача з БД
-        user_db = await db.get_user(user.id)
+        # Отримуємо користувача з кешу або БД
+        user_db = _user_cache.get(user.id)
+        if not user_db:
+            user_db = await db.get_user(user.id)
+            if user_db:
+                _user_cache[user.id] = user_db
         
         # Реєстрація нового користувача якщо немає в БД
         if not user_db:
@@ -49,6 +57,8 @@ class SubscriptionMiddleware(BaseMiddleware):
                     language_code=user.language_code or "uk",
                 )
                 user_db = await db.get_user(user.id)
+                if user_db:
+                    _user_cache[user.id] = user_db
             except Exception as e:
                 logger.error(f"Failed to create/fetch user {user.id}: {e}")
                 return await handler(event, data)
@@ -99,6 +109,7 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="member",
                 )
+                _user_cache.pop(user.id, None) # Оновлюємо кеш
             except Exception as e:
                 logger.error(f"Помилка оновлення статусу підписки: {e}")
             return await handler(event, data)
@@ -109,6 +120,7 @@ class SubscriptionMiddleware(BaseMiddleware):
                     channel_member_checked_at=datetime.now().isoformat(),
                     channel_member_status="left",
                 )
+                _user_cache.pop(user.id, None) # Оновлюємо кеш
             except Exception as e:
                 logger.warning(f"Не вдалося оновити статус учасника: {e}")
 
