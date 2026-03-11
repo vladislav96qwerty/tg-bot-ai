@@ -31,6 +31,18 @@ class UserSearchStates(StatesGroup):
 
 admin_filter = F.from_user.id.in_(config.ADMIN_IDS)
 
+# ✅ FIX #13: інвалідація кешу юзера після зміни даних адміном
+def _invalidate_user_cache(user_id: int):
+    """Видаляє юзера з кешу middleware щоб зміни відразу вступили в силу."""
+    try:
+        from src.middlewares.subscription import _user_cache
+        _user_cache.pop(user_id, None)
+    except (ImportError, AttributeError):
+        pass  # кеш ще не створено — ок
+
+# ✅ FIX #23: флаг для зупинки розсилки
+_broadcast_cancel = {}
+
 
 def _admin_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -44,11 +56,15 @@ def _admin_menu_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def _user_card_kb(user_id: int, is_banned: bool = False) -> InlineKeyboardMarkup:
+def _user_card_kb(user_id: int, is_banned: bool = False, is_sponsor: bool = False) -> InlineKeyboardMarkup:
     """Клавіатура для картки керування користувачем."""
     ban_btn = InlineKeyboardButton(text="✅ Розбанити", callback_data=f"adm_set:unban:{user_id}") if is_banned \
         else InlineKeyboardButton(text="🚫 Бан", callback_data=f"adm_set:ban:{user_id}")
     
+    # ✅ FIX: кнопка забрати/дати спонсора
+    sponsor_btn = InlineKeyboardButton(text="❌ Забрати спонсора", callback_data=f"adm_set:unsponsor:{user_id}") if is_sponsor \
+        else InlineKeyboardButton(text="🏆 Спонсор", callback_data=f"adm_set:sponsor:{user_id}")
+
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             ban_btn,
@@ -56,10 +72,12 @@ def _user_card_kb(user_id: int, is_banned: bool = False) -> InlineKeyboardMarkup
         ],
         [InlineKeyboardButton(text="✉️ Повідомлення", callback_data=f"adm_set:msg:{user_id}")],
         [
-            InlineKeyboardButton(text="🏆 Спонсор", callback_data=f"adm_set:sponsor:{user_id}"),
+            sponsor_btn,
             InlineKeyboardButton(text="🪙 +100", callback_data=f"adm_set:points100:{user_id}"),
             InlineKeyboardButton(text="💰 +500", callback_data=f"adm_set:points500:{user_id}"),
         ],
+        # ✅ FIX: кнопка зняти бали
+        [InlineKeyboardButton(text="➖ -100", callback_data=f"adm_set:pointsminus100:{user_id}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
     ])
 
@@ -224,16 +242,32 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
     data = await state.get_data()
     msg_id = data["broadcast_msg_id"]
     from_chat_id = data["broadcast_chat_id"]
+    admin_id = callback.from_user.id
 
     users = await db.get_all_users()
     total_users = len(users)
     count = 0
     blocked = 0
+    cancelled = False
 
-    await callback.message.edit_text(f"⏳ Розсилка почалася для {total_users} юзерів...")
+    # ✅ FIX #23: скидаємо флаг скасування
+    _broadcast_cancel.pop(admin_id, None)
+
+    await callback.message.edit_text(
+        f"⏳ Розсилка почалася для {total_users} юзерів...",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
+        ]),
+    )
 
     batch_size = 50
     for i in range(0, total_users, batch_size):
+        # ✅ FIX #23: перевірка флагу скасування
+        if _broadcast_cancel.get(admin_id):
+            _broadcast_cancel.pop(admin_id, None)
+            cancelled = True
+            break
+
         batch = users[i:i + batch_size]
         for user in batch:
             try:
@@ -247,19 +281,24 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
             except TelegramForbiddenError:
                 blocked += 1
             except Exception as e:
-                logger.error(f"Broadcast error for user {user.get('user_id')}: {e}")
+                logger.warning(f"Broadcast error for user {user.get('user_id')}: {e}")
 
         if i > 0 and i % 500 == 0:
             try:
                 await callback.message.edit_text(
-                    f"⏳ Розсилка: оброблено {i}/{total_users}..."
+                    f"⏳ Розсилка: оброблено {i}/{total_users}...",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
+                    ]),
                 )
             except Exception as e:
-                logger.error(f"Помилка: {e}")
+                logger.warning(f"Broadcast progress update error: {e}")
 
     await state.clear()
+
+    status = "⏹ <b>Розсилку зупинено</b>" if cancelled else "✅ <b>Розсилка завершена!</b>"
     await callback.message.answer(
-        f"✅ <b>Розсилка завершена!</b>\n\n"
+        f"{status}\n\n"
         f"Доставлено: <code>{count}</code>\n"
         f"Заблокували бота: <code>{blocked}</code>",
         parse_mode="HTML",
@@ -268,6 +307,13 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
         ]),
     )
     await callback.answer()
+
+
+# ✅ FIX #23: хендлер зупинки розсилки
+@router.callback_query(F.data == "cancel_broadcast", admin_filter)
+async def cancel_broadcast(callback: types.CallbackQuery):
+    _broadcast_cancel[callback.from_user.id] = True
+    await callback.answer("⏹ Розсилку буде зупинено після поточного пакету")
 
 
 # ── User Management ──────────────────────────────────────────────────────────
@@ -341,6 +387,11 @@ async def _show_user_card(source: types.Message | types.CallbackQuery, user_data
     safe_username = html.escape(user_data.get("username") or "—")
     uid = user_data["user_id"]
     is_banned = bool(user_data.get("is_banned"))
+    is_sponsor = bool(user_data.get("is_sponsor"))  # ✅ FIX
+
+    # ✅ FIX: показуємо нотатку та причину бану в картці
+    admin_note = user_data.get("admin_note") or ""
+    ban_reason = user_data.get("ban_reason") or ""
 
     text = (
         f"👤 <b>Керування користувачем</b>\n\n"
@@ -351,11 +402,19 @@ async def _show_user_card(source: types.Message | types.CallbackQuery, user_data
         f"Спонсор: {sponsor}\n"
         f"Зареєстрований: {str(user_data.get('created_at', '—'))[:10]}"
     )
-    
+    if ban_reason:
+        text += f"\n🚫 Причина бану: <i>{html.escape(ban_reason)}</i>"
+    if admin_note:
+        text += f"\n📝 Нотатка: <i>{html.escape(admin_note)}</i>"
+
+    kb = _user_card_kb(uid, is_banned, is_sponsor)  # ✅ FIX: передаємо is_sponsor
     if isinstance(source, types.Message):
-        await source.answer(text, reply_markup=_user_card_kb(uid, is_banned), parse_mode="HTML")
+        await source.answer(text, reply_markup=kb, parse_mode="HTML")
     else:
-        await source.message.edit_text(text, reply_markup=_user_card_kb(uid, is_banned), parse_mode="HTML")
+        try:
+            await source.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await source.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("adm_user_view:"), admin_filter)
@@ -381,6 +440,7 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
 
     if action == "sponsor":
         await db.update_user(user_id, is_sponsor=1)
+        _invalidate_user_cache(user_id)  # ✅ FIX #13
         await callback.answer("✅ Статус спонсора встановлено!")
         try:
             await callback.bot.send_message(
@@ -390,10 +450,17 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
+            logger.warning(f"Не вдалося повідомити юзера {user_id} про спонсора: {e}")
+
+    # ✅ FIX #20: забрати статус спонсора
+    elif action == "unsponsor":
+        await db.update_user(user_id, is_sponsor=0)
+        _invalidate_user_cache(user_id)
+        await callback.answer("❌ Статус спонсора знято")
 
     elif action == "points100":
         await db.admin_add_points(callback.from_user.id, user_id, 100, "Admin bonus")
+        _invalidate_user_cache(user_id)  # ✅ FIX #13
         await callback.answer("✅ +100 балів!")
         try:
             await callback.bot.send_message(
@@ -403,10 +470,11 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
+            logger.warning(f"Не вдалося повідомити юзера {user_id} про +100: {e}")
 
     elif action == "points500":
         await db.admin_add_points(callback.from_user.id, user_id, 500, "Loyalty bonus")
+        _invalidate_user_cache(user_id)  # ✅ FIX #13
         await callback.answer("✅ +500 балів!")
         try:
             await callback.bot.send_message(
@@ -415,7 +483,13 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Помилка надсилання повідомлення користувачу: {e}")
+            logger.warning(f"Не вдалося повідомити юзера {user_id} про +500: {e}")
+
+    # ✅ FIX #21: зняти бали
+    elif action == "pointsminus100":
+        await db.admin_add_points(callback.from_user.id, user_id, -100, "Admin penalty")
+        _invalidate_user_cache(user_id)
+        await callback.answer("➖ -100 балів знято")
 
     elif action == "reject_donate":
         await callback.answer("❌ Запит відхилено")
@@ -427,7 +501,7 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
                 parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Помилка надсилання повідомлення про відхилення донату: {e}")
+            logger.warning(f"Не вдалося повідомити юзера {user_id} про відхилення донату: {e}")
 
     elif action == "ban":
         await state.set_state(UserSearchStates.waiting_ban_reason)
@@ -436,8 +510,8 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
         return await callback.answer()
 
     elif action == "unban":
-        # ✅ FIX #3: db.unban_user очікує (admin_id, user_id) — передаємо обидва
         await db.unban_user(callback.from_user.id, user_id)
+        _invalidate_user_cache(user_id)  # ✅ FIX #13
         await callback.answer("✅ Користувача розбанено")
         user_data = await db.get_user(user_id)
         return await _show_user_card(callback, user_data)
@@ -470,6 +544,7 @@ async def process_ban_reason(message: types.Message, state: FSMContext):
     reason = message.text.strip()
     admin_id = message.from_user.id
     await db.ban_user(admin_id, user_id, reason)
+    _invalidate_user_cache(user_id)  # ✅ FIX #13
     await state.clear()
     await message.answer(f"🚫 Користувача <code>{user_id}</code> заблоковано.")
     user_data = await db.get_user(user_id)

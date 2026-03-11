@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import time
 from typing import List, Dict  # ✅ FIX #2: прибрано невикористаний Optional
 from urllib.parse import quote_plus
 
@@ -15,13 +16,36 @@ from src.config import config
 router = Router()
 logger = logging.getLogger(__name__)
 
-# Проста захист від флуду пошуку
-_search_cooldown = {}
+# Баг #15 fix: простий TTL-кеш без зовнішніх залежностей — немає витоку пам'яті
+class _TTLDict:
+    """Мінімальний TTL-словник: зберігає ключ тільки ttl секунд."""
+    def __init__(self, ttl: float):
+        self._ttl = ttl
+        self._data: dict = {}
+
+    def __contains__(self, key):
+        entry = self._data.get(key)
+        if entry is None:
+            return False
+        if time.time() - entry > self._ttl:
+            del self._data[key]
+            return False
+        return True
+
+    def __setitem__(self, key, _value):
+        self._data[key] = time.time()
+
+
+_search_cooldown = _TTLDict(ttl=3)
 
 
 async def is_premium(user_id: int, bot: any) -> bool:
     """Checks if user has premium (is channel member or sponsor)."""
-    user_db = await db.get_user(user_id)
+    # Баг #14 fix: спочатку перевіряємо кеш middleware, щоб не дублювати запит
+    from src.middlewares.subscription import _user_cache
+    user_db = _user_cache.get(user_id)
+    if not user_db:
+        user_db = await db.get_user(user_id)
     if not user_db:
         return False
 
@@ -240,16 +264,14 @@ async def text_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is not None:
         return
-    
-    # Проста захист від флуду пошуку
-    import time
+
+    # Баг #15 fix: TTLCache — просто перевіряємо наявність ключа
     user_id = message.from_user.id
-    now = time.time()
-    if now - _search_cooldown.get(user_id, 0) < 3:
+    if user_id in _search_cooldown:
         await message.answer("⏳ Зачекайте 3 секунди між пошуками")
         return
-    _search_cooldown[user_id] = now
-    
+    _search_cooldown[user_id] = True
+
     await perform_search(message, message.text.strip(), state)
 
 
@@ -257,6 +279,12 @@ async def perform_search(message: types.Message, query: str, state: FSMContext):
     """Core search logic — fetches results and saves them to FSM state."""
     has_premium = await is_premium(message.from_user.id, message.bot)
     limit = 10 if has_premium else 3
+
+    # Баг #27 fix: показуємо індикатор набору перед запитом
+    try:
+        await message.bot.send_chat_action(chat_id=message.from_user.id, action="typing")
+    except Exception:
+        pass
 
     try:
         results = await tmdb_service.search_movies(query, limit=limit)
@@ -292,13 +320,53 @@ async def cb_movie_details(callback: types.CallbackQuery):
         logger.error(f"Помилка: {e}")
 
 
+# Баг #5 fix: повноцінний обробник кнопки "⭐ Оцінити"
 @router.callback_query(F.data.startswith("rate:"))
 async def cb_rate_movie(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
     movie_id = int(callback.data.split(":")[1])
-    await callback.answer() # Placeholder for actual rating logic
+
+    row1 = [
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        for i in range(1, 6)
+    ]
+    row2 = [
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        for i in range(6, 11)
+    ]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        row1, row2,
+        [InlineKeyboardButton(text="❌ Скасувати", callback_data=f"movie_id:{movie_id}")]
+    ])
+    try:
+        await callback.message.edit_caption(
+            caption="⭐ Оціни цей фільм від 1 до 10:",
+            reply_markup=keyboard,
+        )
+    except Exception:
+        await callback.message.answer(
+            "⭐ Оціни цей фільм від 1 до 10:",
+            reply_markup=keyboard,
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("set_rate:"))
+async def cb_set_rating(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
+    parts = callback.data.split(":")
+    movie_id = int(parts[1])
+    rating = int(parts[2])
+    user_id = callback.from_user.id
+
+    await db.save_rating(user_id, movie_id, rating)
+    await db.add_points(user_id, 10)
+    await callback.answer(f"✅ Оцінка {rating}/10 збережена! +10 балів")
+    await show_movie_details(callback.message, movie_id, edit=True, user_id=user_id)
 
 
 @router.callback_query(F.data.startswith("similar:"))
@@ -340,8 +408,6 @@ async def cb_similar_movies(callback: types.CallbackQuery):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
             parse_mode="Markdown"
         )
-
-
 
 
 @router.callback_query(F.data == "back_to_search")

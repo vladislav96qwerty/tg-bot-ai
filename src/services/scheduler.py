@@ -600,7 +600,7 @@ class ChannelScheduler:
             bot_msg = await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
             
             # Зберігаємо відповідь у базу, щоб post_guess_answer міг її дістати
-            import json
+            
             payload = json.dumps({
                 "title": res["title"],
                 "year": res["year"],
@@ -620,8 +620,8 @@ class ChannelScheduler:
             if not last_q:
                 return
 
-            import json
-            data = json.loads(last_q["text_full"]) # Ми зберегли JSON в text_full
+            
+            data = json.loads(last_q["content"])
             
             text = (
                 f"✅ *Правильна відповідь: {data['title']} ({data['year']})*\n\n"

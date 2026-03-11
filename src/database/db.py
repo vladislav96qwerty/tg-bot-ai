@@ -34,6 +34,8 @@ class LibsqlCursor:
         self.result = result
         self._rows = [ShimRow(result.columns, r) for r in result.rows]
         self._idx = 0
+        # ✅ FIX: lastrowid потрібен для save_feedback та save_quote
+        self.lastrowid = getattr(result, 'last_insert_rowid', None) or 0
 
     async def fetchone(self):
         if self._idx < len(self._rows):
@@ -147,8 +149,10 @@ class Database:
         await self._add_column_if_missing(db, "users", "admin_note", "TEXT")
         # ✅ FIX #2: channel_member_status для коректного кешування is_premium
         await self._add_column_if_missing(db, "users", "channel_member_status", "TEXT DEFAULT 'unknown'")
+        # ✅ FIX: expires_at для watch_sessions (автозакриття через 24 год)
+        await self._add_column_if_missing(db, "watch_sessions", "expires_at", "TIMESTAMP")
 
-        # Р†РЅРґРµРєСЃРё РґР»СЏ РїСЂРѕРґСѓРєС‚РёРІРЅРѕСЃС‚С–
+        # Індекси для продуктивності
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_watchlist_user_tmdb ON watchlist(user_id, tmdb_id)",
@@ -159,6 +163,10 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON poll_votes(poll_id)",
             "CREATE INDEX IF NOT EXISTS idx_channel_posts_type ON channel_posts(post_type, posted_at)",
             "CREATE INDEX IF NOT EXISTS idx_achievements_user ON achievements(user_id)",
+            # ✅ FIX: UNIQUE для swipe_sessions (потрібен для ON CONFLICT)
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_swipe_user ON swipe_sessions(user_id)",
+            # ✅ FIX: UNIQUE для ratings (захист від дублів)
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_unique ON ratings(user_id, tmdb_id)",
         ]
         for idx in indexes:
             await db.execute(idx)
@@ -583,30 +591,27 @@ class Database:
             return dict(row) if row else None
 
     async def save_swipe_session(self, user_id: int, genres: str, last_tmdb_id: int, session_data: str):
-        check_query = "SELECT id FROM swipe_sessions WHERE user_id = ?"
-        db = await self._get_db()
-        async with db.execute(check_query, (user_id,)) as cursor:
-            exists = await cursor.fetchone()
-            if exists:
-                await db.execute(
-                    "UPDATE swipe_sessions SET genres = ?, last_tmdb_id = ?, session_data = ? WHERE user_id = ?",
-                    (genres, last_tmdb_id, session_data, user_id),
-                )
-            else:
-                await db.execute(
-                    "INSERT INTO swipe_sessions (user_id, genres, last_tmdb_id, session_data) VALUES (?, ?, ?, ?)",
-                    (user_id, genres, last_tmdb_id, session_data),
-                )
-        await db.commit()
+        # ✅ FIX: ON CONFLICT замість SELECT→INSERT/UPDATE (гонка даних)
+        query = """
+        INSERT INTO swipe_sessions (user_id, genres, last_tmdb_id, session_data)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            genres = excluded.genres,
+            last_tmdb_id = excluded.last_tmdb_id,
+            session_data = excluded.session_data
+        """
+        await self._execute(query, (user_id, genres, last_tmdb_id, session_data))
 
     async def create_watch_session(self, session_id: str, creator_id: int):
-        query = "INSERT INTO watch_sessions (session_id, creator_id) VALUES (?, ?)"
+        # ✅ FIX: сесія автоматично закінчується через 24 години
+        query = "INSERT INTO watch_sessions (session_id, creator_id, expires_at) VALUES (?, ?, datetime('now', '+24 hours'))"
         db = await self._get_db()
         await db.execute(query, (session_id, creator_id))
         await db.commit()
 
     async def get_watch_session(self, session_id: str):
-        query = "SELECT * FROM watch_sessions WHERE session_id = ?"
+        # ✅ FIX: повертає тільки активні (не прострочені) сесії
+        query = "SELECT * FROM watch_sessions WHERE session_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))"
         db = await self._get_db()
         async with db.execute(query, (session_id,)) as cursor:
             row = await cursor.fetchone()
@@ -727,6 +732,7 @@ class Database:
             if threshold > points:
                 next_rank = name
                 next_threshold = threshold
+                break  # ✅ FIX: зупиняємось на найближчому ранзі
 
         return {
             "rank": current_rank,
@@ -738,7 +744,7 @@ class Database:
 
     # ── Top movies (community ratings) ───────────────────────────────────
 
-    async def get_top_movies(self, period: str = "all", genre_filter: str = None, limit: int = 10) -> list:
+    async def get_top_movies(self, period: str = "all", limit: int = 10) -> list:
         """
         Top movies by community average rating.
         period: 'week' | 'month' | 'all'
@@ -858,13 +864,17 @@ class Database:
 
     async def unban_user(self, admin_id: int, user_id: int):
         db = await self._get_db()
+        # ✅ FIX: зберігаємо причину бана в лог перед очищенням
+        async with db.execute("SELECT ban_reason FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            old_reason = row[0] if row else ""
         await db.execute(
             "UPDATE users SET is_banned = 0, ban_reason = NULL WHERE user_id = ?",
             (user_id,)
         )
         await db.execute(
-            "INSERT INTO admin_log (admin_id, target_user_id, action, details) VALUES (?, ?, 'unban', '')",
-            (admin_id, user_id)
+            "INSERT INTO admin_log (admin_id, target_user_id, action, details) VALUES (?, ?, 'unban', ?)",
+            (admin_id, user_id, f"was: {old_reason}")
         )
         await db.commit()
 
@@ -917,6 +927,18 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    # ✅ FIX: алиас для кнопки "Оцінити" в movie.py
+    async def save_rating(self, user_id: int, tmdb_id: int, rating: int):
+        """Alias for add_rating — використовується в cb_set_rating."""
+        return await self.add_rating(user_id, tmdb_id, rating)
+
+    # ✅ FIX: пагінована завантаження юзерів для розсилки (коли 5000+)
+    async def get_users_paginated(self, offset: int, limit: int) -> list:
+        query = "SELECT * FROM users WHERE is_banned = 0 ORDER BY user_id LIMIT ? OFFSET ?"
+        db = await self._get_db()
+        async with db.execute(query, (limit, offset)) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
 
 
 # Глобальний інстанс

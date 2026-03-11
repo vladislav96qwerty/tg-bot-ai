@@ -57,9 +57,8 @@ class SubscriptionMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # 🚫 ПЕРЕВІРКА БАНУ
-        if await db.is_banned(user.id):
-            user_db = await db.get_user(user.id) # Re-fetch to get reason
-            ban_reason = user_db.get("ban_reason") or "" if user_db else ""
+        if user_db.get("is_banned"):
+            ban_reason = user_db.get("ban_reason") or ""
             msg = "🚫 <b>Ваш акаунт заблоковано.</b>"
             if ban_reason:
                 msg += f"\nПричина: <i>{ban_reason}</i>"

@@ -46,6 +46,10 @@ async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext
         await callback.message.edit_text("🤖 <b>Нетик вимикає логіку і вмикає інтуїцію...</b>\nАналізую твої смаки, зачекай трішки.", parse_mode="HTML")
     except Exception as e:
         logger.debug(f"Failed to edit recommendations message: {e}")
+    try:
+        await callback.bot.send_chat_action(chat_id=callback.from_user.id, action="typing")
+    except Exception:
+        pass
 
     recs = await recommender_service.get_recommendations(user_id)
 

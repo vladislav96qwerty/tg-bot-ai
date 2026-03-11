@@ -205,6 +205,25 @@ async def show_main_menu(message: types.Message):
     safe_name = html.escape(message.from_user.first_name)
     menu_text = (
         f"Привіт, {safe_name}! 👋\n"
+        f"Я — <b>Нетік</b>, твій кіногід 🎬\n"
+        f"Що шукаємо сьогодні?"
+    )
+    await message.answer(
+        menu_text, 
+        reply_markup=PERSISTENT_MENU,
+        parse_mode="HTML"
+    )
+    await message.answer(
+        "Обери розділ 👇",
+        reply_markup=get_main_menu_kb(has_premium),
+        parse_mode="HTML"
+    )
+    from src.routers.movie import is_premium
+
+    has_premium = await is_premium(message.from_user.id, message.bot)
+    safe_name = html.escape(message.from_user.first_name)
+    menu_text = (
+        f"Привіт, {safe_name}! 👋\n"
         f"Я — <b>Нетик</b>, твій кіногід 🎬\n"
         f"Що шукаємо сьогодні?"
     )
