@@ -186,8 +186,8 @@ class SubscriptionMiddleware(BaseMiddleware):
                     except Exception:
                         try:
                             await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Failed to send subscription alert: {e}")
             await event.answer(
                 "Спочатку підпишись на канал! 🎬", show_alert=True
             )

@@ -92,16 +92,6 @@ class TMDBService:
             return None
         return random.choice(data["results"][:10])
 
-    async def search_movie(self, query: str) -> Optional[Dict]:
-        """Шукає фільм за назвою, повертає перший результат."""
-        data = await self._get("/search/movie", {
-            "query": query,
-            "language": "uk-UA",
-            "include_adult": False,
-        })
-        if not data or not data.get("results"):
-            return None
-        return data["results"][0]
 
     async def get_popular(self, page: int = 1) -> List[Dict[str, Any]]:
         data = await self._get("/movie/popular", {"page": page})

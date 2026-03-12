@@ -90,8 +90,8 @@ class AIService:
         if json_match:
             try:
                 return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                logger.debug(f"JSON extract (markdown) failed: {e}")
         
         # 3. Last resort: find first { and last }
         start = content.find('{')
@@ -99,8 +99,8 @@ class AIService:
         if start != -1 and end != -1:
             try:
                 return json.loads(content[start:end+1])
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                logger.debug(f"JSON extract (brute force) failed: {e}")
 
         logger.error(f"Failed to parse JSON even with regex. Content: {content[:200]}...")
         return None
