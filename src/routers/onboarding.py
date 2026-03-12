@@ -178,6 +178,6 @@ async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(welcome_back, reply_markup=get_main_menu_kb(has_premium), parse_mode="HTML")
     try:
         await callback.message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete onboarding message: {e}")
     await callback.answer()

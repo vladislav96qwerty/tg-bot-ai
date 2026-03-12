@@ -288,8 +288,8 @@ async def perform_search(message: types.Message, query: str, state: FSMContext):
     # Баг #27 fix: показуємо індикатор набору перед запитом
     try:
         await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to send typing action: {e}")
 
     try:
         results = await tmdb_service.search_movies(query, limit=limit)
@@ -324,8 +324,8 @@ async def cb_movie_details(callback: types.CallbackQuery):
     await show_movie_details(callback.message, movie_id, edit=False, user_id=callback.from_user.id)
     try:
         await old_msg.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete old message after showing movie details: {e}")
 
 
 # Баг #5 fix: повноцінний обробник кнопки "⭐ Оцінити"

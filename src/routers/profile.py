@@ -54,8 +54,8 @@ async def show_profile(event: Union[types.Message, types.CallbackQuery]):
         try:
             dt = datetime.fromisoformat(reg_date)
             reg_date = dt.strftime("%d.%m.%Y")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to parse registration date: {e}")
 
     safe_name = html.escape(user_data.get("full_name") or "Невідомо")
     safe_username = html.escape(user_data.get("username") or "без юзернейму")

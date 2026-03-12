@@ -52,8 +52,8 @@ async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext
             await callback.message.answer(rec_wait_text, parse_mode="HTML")
     try:
         await callback.bot.send_chat_action(chat_id=callback.from_user.id, action="typing")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to send typing action: {e}")
 
     recs = await recommender_service.get_recommendations(user_id)
 
@@ -117,8 +117,8 @@ async def show_recommendation_card(message: types.Message, movie: Dict[str, Any]
         await message.answer_photo(photo=photo_url, caption=text, reply_markup=markup, parse_mode="HTML")
         try:
             await message.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to delete message after showing recommendation: {e}")
     else:
         try:
             await message.edit_text(text, reply_markup=markup, parse_mode="HTML")

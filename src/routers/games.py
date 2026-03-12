@@ -55,8 +55,8 @@ async def start_guess_game(callback: types.CallbackQuery):
 
     try:
         await callback.message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete message in guess game: {e}")
 
     await callback.answer()
     await callback.message.answer_photo(

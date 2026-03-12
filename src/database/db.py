@@ -274,12 +274,6 @@ class Database:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-    async def get_all_users(self) -> List[Dict[str, Any]]:
-        query = "SELECT * FROM users"
-        db = await self._get_db()
-        async with db.execute(query) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
 
     async def get_active_users_count(self, hours: int = 24) -> int:
         query = "SELECT COUNT(*) FROM users WHERE last_active > datetime('now', ?)"
@@ -375,7 +369,8 @@ class Database:
 
     # в”Ђв”Ђ Ratings в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
-    async def add_rating(self, user_id: int, tmdb_id: int, rating: int):
+    async def save_rating(self, user_id: int, tmdb_id: int, rating: int):
+        """Зберігає або оновлює оцінку фільму від користувача."""
         check_query = "SELECT id FROM ratings WHERE user_id = ? AND tmdb_id = ?"
         db = await self._get_db()
         async with db.execute(check_query, (user_id, tmdb_id)) as cursor:
@@ -712,10 +707,6 @@ class Database:
 # Р“Р»РѕР±Р°Р»СЊРЅРёР№ С–РЅСЃС‚Р°РЅСЃ
     # ── Middleware: ban check ──────────────────────────────────────────────
 
-    async def is_banned(self, user_id: int) -> bool:
-        """Returns True if user is banned."""
-        row = await self.get_user(user_id)
-        return bool(row and row.get("is_banned"))
 
     # ── Loyalty ranks ─────────────────────────────────────────────────────
 
@@ -941,10 +932,6 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    # ✅ FIX: алиас для кнопки "Оцінити" в movie.py
-    async def save_rating(self, user_id: int, tmdb_id: int, rating: int):
-        """Alias for add_rating — використовується в cb_set_rating."""
-        return await self.add_rating(user_id, tmdb_id, rating)
 
     # ✅ FIX: пагінована завантаження юзерів для розсилки (коли 5000+)
     async def get_users_paginated(self, offset: int, limit: int) -> list:

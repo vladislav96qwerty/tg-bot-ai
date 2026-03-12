@@ -54,8 +54,8 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
                         )
                     except Exception as e:
                         logger.debug(f"Failed to notify referrer: {e}")
-            except (IndexError, ValueError):
-                pass
+            except (IndexError, ValueError) as e:
+                logger.debug(f"Failed to parse deep link: {e}")
 
         elif command.args.startswith("joint_"):
             session_id = command.args.replace("joint_", "")

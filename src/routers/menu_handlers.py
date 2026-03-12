@@ -195,8 +195,8 @@ async def cb_mood_pick(callback: types.CallbackQuery):
         except Exception:
             try:
                 await callback.message.answer(mood_wait_text, parse_mode="HTML")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to send mood wait message: {e}")
 
     try:
         popular = await tmdb_service.get_popular(page=1)
@@ -600,8 +600,8 @@ async def confirm_donate(callback: types.CallbackQuery):
     for admin_id in config.ADMIN_IDS:
         try:
             await callback.bot.send_message(admin_id, admin_msg, reply_markup=admin_kb, parse_mode="HTML")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to notify admin {admin_id} about donation: {e}")
 
     await callback.message.answer(
         "🙏 <b>Дякуємо!</b>\n\nВаш запит надіслано адміністратору. Після підтвердження "
@@ -745,8 +745,8 @@ async def handle_feedback_text(message: types.Message, state: FSMContext):
     for admin_id in config.ADMIN_IDS:
         try:
             await message.bot.send_message(admin_id, admin_text, parse_mode="HTML")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to notify admin {admin_id} about feedback: {e}")
 
     await state.clear()
     has_premium = await is_premium(user_id, message.bot)

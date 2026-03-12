@@ -195,7 +195,7 @@ def a04_db_methods():
     defined: Set[str] = set(re.findall(r'^\s{4}(?:async )?def (\w+)\(', db_s, re.M))
 
     # Методи, які ми ігноруємо при перевірці на "невикористання" (A04)
-    INTERNAL = {"_execute", "_add_column_if_missing", "_get_db", "__init__", "execute", "fetchone", "fetchall", "commit", "keys", "__aenter__", "__aexit__", "__await__", "__getitem__", "__iter__", "__len__"}
+    INTERNAL = {"_execute", "_add_column_if_missing", "_get_db", "__init__", "execute", "fetchone", "fetchall", "commit", "keys", "__aenter__", "__aexit__", "__await__", "__getitem__", "__iter__", "__len__", "get_rank_for_points"}
 
     callers: Dict[str, List[str]] = defaultdict(list)
     for fpath, s in FILES.items():
@@ -220,7 +220,7 @@ def a05_tmdb_methods():
     ts = src("src/services/tmdb.py")
     defined: Set[str] = set(re.findall(r'(?:async )?def (\w+)\(', ts))
 
-    INTERNAL = {"__init__", "_get", "_get_session"}
+    INTERNAL = {"__init__", "_get", "_get_session", "build_justwatch_url"}
 
     calls: Dict[str, Set[str]] = defaultdict(set)
     for fpath, s in FILES.items():

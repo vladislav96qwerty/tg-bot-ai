@@ -113,8 +113,8 @@ async def cb_delete_msg(callback: types.CallbackQuery):
         return
     try:
         await callback.message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to delete message: {e}")
     await callback.answer()
 
 
@@ -315,8 +315,8 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
             except Exception:
                 try:
                     await callback.message.edit_caption(caption=prog_text, reply_markup=prog_kb)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to edit caption in broadcast: {e}")
 
     await state.clear()
 
