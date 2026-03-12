@@ -193,7 +193,10 @@ async def cb_mood_pick(callback: types.CallbackQuery):
         try:
             await callback.message.edit_caption(caption=mood_wait_text, parse_mode="HTML")
         except Exception:
-            pass
+            try:
+                await callback.message.answer(mood_wait_text, parse_mode="HTML")
+            except Exception:
+                pass
 
     try:
         popular = await tmdb_service.get_popular(page=1)
