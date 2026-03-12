@@ -238,8 +238,8 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
     from_chat_id = data["broadcast_chat_id"]
     admin_id = callback.from_user.id
 
-    users = await db.get_all_users()
-    total_users = len(users)
+    # Отримуємо загальну кількість користувачів для лічильника
+    total_users = await db.get_active_users_count(hours=999999) # Отримуємо всіх не забанених
     count = 0
     blocked = 0
     cancelled = False
@@ -255,14 +255,18 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
     )
 
     batch_size = 50
-    for i in range(0, total_users, batch_size):
+    offset = 0
+    while offset < total_users:
         # ✅ FIX #23: перевірка флагу скасування
         if _broadcast_cancel.get(admin_id):
             _broadcast_cancel.pop(admin_id, None)
             cancelled = True
             break
 
-        batch = users[i:i + batch_size]
+        batch = await db.get_users_paginated(offset, batch_size)
+        if not batch:
+            break
+
         for user in batch:
             try:
                 await bot.copy_message(
@@ -277,10 +281,11 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
             except Exception as e:
                 logger.warning(f"Broadcast error for user {user.get('user_id')}: {e}")
 
-        if i > 0 and i % 500 == 0:
+        offset += batch_size
+        if offset > 0 and offset % 500 == 0:
             try:
                 await callback.message.edit_text(
-                    f"⏳ Розсилка: оброблено {i}/{total_users}...",
+                    f"⏳ Розсилка: оброблено {offset}/{total_users}...",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
                     ]),

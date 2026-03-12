@@ -79,41 +79,9 @@ async def cb_add_to_watchlist(callback: types.CallbackQuery):
         await callback.answer("⚠️ Помилка отримання даних фільму.", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("rate:"))
-async def cb_rate_movie_start(callback: types.CallbackQuery):
-    if not callback.message:
-        await callback.answer()
-        return
-    tmdb_id = int(callback.data.split(":")[1])
-    row1 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(1, 6)]
-    row2 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(6, 11)]
-    try:
-        await callback.message.edit_caption(
-            caption="⭐ *Оціни фільм від 1 до 10:*",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[row1, row2, [InlineKeyboardButton(text="◀️ Назад", callback_data=f"movie_id:{tmdb_id}")]]),
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"Помилка редагування повідомлення для оцінки: {e}")
-    await callback.answer()
 
 
-@router.callback_query(F.data.startswith("set_rating:"))
-async def cb_set_rating(callback: types.CallbackQuery):
-    if not callback.message:
-        await callback.answer()
-        return
-    params = callback.data.split(":")
-    tmdb_id, rating, user_id = int(params[1]), int(params[2]), callback.from_user.id
-    await db.add_rating(user_id, tmdb_id, rating)
-    await callback.answer(f"⭐ Твоя оцінка: {rating}/10")
-    await callback.message.answer("⭐ *Оцінка збережена!*", parse_mode="Markdown")
-    from src.routers.movie import show_movie_details
-    # ✅ FIX #5: передаємо user_id щоб картка показувала "🏷 Твоя оцінка: X/10"
-    await show_movie_details(callback.message, tmdb_id, edit=True, user_id=callback.from_user.id)
-
-
-# ✅ FIX: "menu_watchlist" містить ":" тому старий split(":")[1] давав IndexError
+# ✅ FIX: "menu_watchlist" не містить ":" тому старий split(":")[1] міг дати IndexError
 @router.callback_query(F.data == "menu_watchlist")
 @router.callback_query(F.data.startswith("wl_tab:"))
 async def cb_show_watchlist(callback: types.CallbackQuery):
@@ -121,7 +89,10 @@ async def cb_show_watchlist(callback: types.CallbackQuery):
         await callback.answer()
         return
     user_id = callback.from_user.id
-    status = callback.data.split(":")[1] if callback.data.startswith("wl_tab:") else "want"
+    # Використовуємо .split(":", 1) для безпечного парсингу
+    parts = callback.data.split(":", 1)
+    status = parts[1] if len(parts) > 1 else "want"
+
     await _render_watchlist(callback.message, user_id, status)
     await callback.answer()
 

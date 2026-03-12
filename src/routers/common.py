@@ -13,7 +13,7 @@ from aiogram.types import (
 from datetime import datetime
 from src.database.db import db
 from src.config import config
-from src.keyboards.main_menu import get_main_menu_kb, get_onboarding_genres_kb
+from src.keyboards.main_menu import get_main_menu_kb
 from src.routers.onboarding import OnboardingStates
 
 router = Router()

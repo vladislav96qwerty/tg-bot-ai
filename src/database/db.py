@@ -245,10 +245,24 @@ class Database:
     async def update_user(self, user_id: int, **kwargs):
         if not kwargs:
             return
-        # Р—Р°РІР¶РґРё РѕРЅРѕРІР»СЋС”РјРѕ last_active СЂР°Р·РѕРј Р· Р±СѓРґСЊ-СЏРєРёРј РѕРЅРѕРІР»РµРЅРЅСЏРј
-        kwargs["last_active"] = datetime.now().isoformat()
-        columns = ", ".join([f"{key} = ?" for key in kwargs.keys()])
-        values = list(kwargs.values())
+
+        # Whitelist of allowed columns to prevent SQL injection
+        allowed_columns = {
+            "username", "full_name", "language_code", "is_sponsor",
+            "channel_member_checked_at", "daily_rec_enabled", "is_banned",
+            "ban_reason", "admin_note", "points", "last_active",
+            "notifications_enabled", "channel_member_status"
+        }
+
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_columns}
+        if not filtered_kwargs and "last_active" not in kwargs:
+            return
+
+        # Завжди оновлюємо last_active разом з будь-яким оновленням
+        filtered_kwargs["last_active"] = datetime.now().isoformat()
+
+        columns = ", ".join([f"{key} = ?" for key in filtered_kwargs.keys()])
+        values = list(filtered_kwargs.values())
         values.append(user_id)
         query = f"UPDATE users SET {columns} WHERE user_id = ?"
         await self._execute(query, tuple(values))

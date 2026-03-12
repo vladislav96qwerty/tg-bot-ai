@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import time
 from typing import List, Dict  # ✅ FIX #2: прибрано невикористаний Optional
 from urllib.parse import quote_plus
 
@@ -288,7 +287,7 @@ async def perform_search(message: types.Message, query: str, state: FSMContext):
 
     # Баг #27 fix: показуємо індикатор набору перед запитом
     try:
-        await message.bot.send_chat_action(chat_id=message.from_user.id, action="typing")
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     except Exception:
         pass
 
@@ -335,11 +334,11 @@ async def cb_rate_movie(callback: types.CallbackQuery):
     movie_id = int(callback.data.split(":")[1])
 
     row1 = [
-        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{movie_id}:{i}")
         for i in range(1, 6)
     ]
     row2 = [
-        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{movie_id}:{i}")
         for i in range(6, 11)
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -359,7 +358,7 @@ async def cb_rate_movie(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("set_rate:"))
+@router.callback_query(F.data.startswith("set_rating:"))
 async def cb_set_rating(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()

@@ -110,7 +110,10 @@ async def show_next_joint_movie(callback: types.CallbackQuery, session_id: str):
         voted_ids = await db.get_session_voted_ids(session_id, callback.from_user.id)
         
         # Filter available movies
-        movies = await tmdb_service.get_popular_movies(page=random.randint(1, 10))
+        # Використовуємо хеш session_id для детермінованого вибору сторінки
+        import hashlib
+        page_seed = int(hashlib.md5(session_id.encode()).hexdigest(), 16) % 10 + 1
+        movies = await tmdb_service.get_popular_movies(page=page_seed)
         available = [m for m in movies if m.get("id") not in voted_ids]
         
         if not available:
