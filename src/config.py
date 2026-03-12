@@ -29,6 +29,7 @@ class Config:
         """Call once at startup — crashes fast with a clear message if .env is missing keys."""
         required = {
             "BOT_TOKEN":        self.BOT_TOKEN,
+            "ADMIN_IDS":        self.ADMIN_IDS,
             "CHANNEL_ID":       self.CHANNEL_ID,
             "CHANNEL_USERNAME": self.CHANNEL_USERNAME,
             "GROQ_API_KEY":     self.GROQ_API_KEY,

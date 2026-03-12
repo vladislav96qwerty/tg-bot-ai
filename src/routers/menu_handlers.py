@@ -49,18 +49,14 @@ async def _edit_menu(callback: types.CallbackQuery, open_cat: str | None = None)
         await callback.message.edit_reply_markup(reply_markup=markup)
     except Exception:
         safe_name = html.escape(callback.from_user.first_name)
+        menu_text = f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?"
         try:
-            await callback.message.edit_text(
-                f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?",
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
+            await callback.message.edit_text(menu_text, reply_markup=markup, parse_mode="HTML")
         except Exception:
-            await callback.message.answer(
-                f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?",
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
+            try:
+                await callback.message.edit_caption(caption=menu_text, reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(menu_text, reply_markup=markup, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("cat_open:"))
@@ -69,7 +65,10 @@ async def cb_cat_open(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    key = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    key = parts[1]
     await _edit_menu(callback, open_cat=key)
     await callback.answer()
 
@@ -104,7 +103,10 @@ async def cb_menu_search(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -160,18 +162,14 @@ async def cb_menu_mood(callback: types.CallbackQuery):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")])
 
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
     try:
-        await callback.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="HTML",
-        )
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="HTML",
-        )
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
 
@@ -180,19 +178,25 @@ async def cb_mood_pick(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    mood_key = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    mood_key = parts[1]
     mood_label = MOOD_LABELS.get(mood_key, mood_key)
     user_id = callback.from_user.id
 
     await callback.answer()
+    mood_wait_text = f"🎬 <b>Нетик підбирає кіно під настрій {mood_label}...</b>\nЗачекай трішки ⏳"
     try:
-        await callback.message.edit_text(
-            f"🎬 <b>Нетик підбирає кіно під настрій {mood_label}...</b>\n"
-            "Зачекай трішки ⏳",
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.debug(f"Mood pick edit failed: {e}")
+        await callback.message.edit_text(mood_wait_text, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=mood_wait_text, parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.answer(mood_wait_text, parse_mode="HTML")
+            except Exception:
+                pass
 
     try:
         popular = await tmdb_service.get_popular(page=1)
@@ -216,16 +220,17 @@ async def cb_mood_pick(callback: types.CallbackQuery):
 
         res = await ai_service.ask(prompt, expect_json=True)
         if not res or "films" not in res:
+            no_mood_text = "🔎 Нетик не зміг підібрати фільми. Спробуй пізніше!"
+            no_mood_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
+            ])
             try:
-                await callback.message.edit_text(
-                    "🔎 Нетик не зміг підібрати фільми. Спробуй пізніше!",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
-                    ]),
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                logger.error(f"Помилка відображення повідомлення про відсутність фільмів: {e}")
+                await callback.message.edit_text(no_mood_text, reply_markup=no_mood_kb, parse_mode="HTML")
+            except Exception:
+                try:
+                    await callback.message.edit_caption(caption=no_mood_text, reply_markup=no_mood_kb, parse_mode="HTML")
+                except Exception:
+                    await callback.message.answer(no_mood_text, reply_markup=no_mood_kb, parse_mode="HTML")
             return
 
         text = f"🧠 <b>Настрій: {mood_label}</b>\n\n"
@@ -255,31 +260,28 @@ async def cb_mood_pick(callback: types.CallbackQuery):
         keyboard.append([InlineKeyboardButton(text="🔄 Інший настрій", callback_data="menu_mood")])
         keyboard.append([InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")])
 
+        mood_kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
         try:
-            await callback.message.edit_text(
-                text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-                parse_mode="HTML",
-            )
+            await callback.message.edit_text(text, reply_markup=mood_kb, parse_mode="HTML")
         except Exception:
-            await callback.message.answer(
-                text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-                parse_mode="HTML",
-            )
+            try:
+                await callback.message.edit_caption(caption=text, reply_markup=mood_kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(text, reply_markup=mood_kb, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Mood recommendation error: {e}", exc_info=True)
+        err_mood_text = "🔎 Щось пішло не так. Спробуй ще раз!"
+        err_mood_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
+        ])
         try:
-            await callback.message.edit_text(
-                "🔎 Щось пішло не так. Спробуй ще раз!",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
-                ]),
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Помилка відображення меню: {e}")
+            await callback.message.edit_text(err_mood_text, reply_markup=err_mood_kb, parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_caption(caption=err_mood_text, reply_markup=err_mood_kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(err_mood_text, reply_markup=err_mood_kb, parse_mode="HTML")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -309,7 +311,10 @@ async def cb_menu_ratings(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -351,7 +356,10 @@ async def cb_menu_stats(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -393,7 +401,10 @@ async def cb_menu_leaderboard(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -439,7 +450,10 @@ async def cb_menu_achievements(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -474,7 +488,10 @@ async def cb_menu_notifications(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer(f"{'Увімкнено 🔔' if new_val else 'Вимкнено 🔕'}")
 
 
@@ -519,7 +536,10 @@ async def cb_menu_help(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -545,7 +565,13 @@ async def cb_menu_donate(event: types.Message | types.CallbackQuery):
         [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
     ])
     if isinstance(event, types.CallbackQuery):
-        await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await event.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            try:
+                await event.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+            except Exception:
+                await event.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         await event.answer()
     else:
         await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
@@ -613,7 +639,10 @@ async def cb_menu_referral(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -641,16 +670,25 @@ async def cb_menu_feedback(callback: types.CallbackQuery, state: FSMContext):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("feedback_type:"), FeedbackStates.CHOOSING_TYPE)
+@router.callback_query(F.data.startswith("feedback_type:"))
 async def cb_feedback_type(callback: types.CallbackQuery, state: FSMContext):
     if not callback.message:
         await callback.answer()
         return
-    fb_type = callback.data.split(":")[1]
+
+    if await state.get_state() != FeedbackStates.CHOOSING_TYPE:
+        return await callback.answer("⏳ Сесія застаріла. Спробуйте ще раз.", show_alert=True)
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    fb_type = parts[1]
     type_labels = {"bug": "🐛 Баг", "suggestion": "💡 Пропозиція", "other": "💬 Інше"}
     label = type_labels.get(fb_type, fb_type)
 
@@ -668,7 +706,10 @@ async def cb_feedback_type(callback: types.CallbackQuery, state: FSMContext):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -730,18 +771,14 @@ async def cb_feedback_cancel(callback: types.CallbackQuery, state: FSMContext):
     has_premium = await is_premium(user_id, callback.bot)
     markup = get_main_menu_kb(has_premium)
     safe_name = html.escape(callback.from_user.first_name)
+    menu_back_text = f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?"
     try:
-        await callback.message.edit_text(
-            f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?",
-            reply_markup=markup,
-            parse_mode="HTML",
-        )
+        await callback.message.edit_text(menu_back_text, reply_markup=markup, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(
-            f"Привіт, {safe_name}! 👋\nЯ — <b>Нетик</b>, твій кіногід 🎬\nЩо шукаємо сьогодні?",
-            reply_markup=markup,
-            parse_mode="HTML",
-        )
+        try:
+            await callback.message.edit_caption(caption=menu_back_text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(menu_back_text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
 
@@ -761,18 +798,14 @@ async def cb_top_movies(callback: types.CallbackQuery):
         ],
         [InlineKeyboardButton(text="⬅️ Меню", callback_data="back_to_menu")],
     ])
+    top_text = "🏆 <b>Топ фільмів за оцінками спільноти</b>\n\nОбери період:"
     try:
-        await callback.message.edit_text(
-            "🏆 <b>Топ фільмів за оцінками спільноти</b>\n\nОбери період:",
-            reply_markup=keyboard,
-            parse_mode="HTML",
-        )
+        await callback.message.edit_text(top_text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(
-            "🏆 <b>Топ фільмів за оцінками спільноти</b>\n\nОбери період:",
-            reply_markup=keyboard,
-            parse_mode="HTML",
-        )
+        try:
+            await callback.message.edit_caption(caption=top_text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(top_text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -782,7 +815,10 @@ async def cb_top_movies_period(callback: types.CallbackQuery):
         await callback.answer()
         return
     """Shows top movies for selected period."""
-    period = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    period = parts[1]
     await callback.answer("⏳ Завантажую...")
     top = await db.get_top_movies(period=period, limit=10)
     period_labels = {"week": "тижня", "month": "місяця", "all": "всіх часів"}
@@ -824,7 +860,10 @@ async def cb_top_movies_period(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 # ── Збереження цитати дня ────────────────────────────────────────────────────
@@ -881,14 +920,23 @@ async def cb_my_saved_quotes(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("del_quote:"))
 async def cb_del_quote(callback: types.CallbackQuery):
     """Видаляє цитату."""
+    if not callback.message:
+        await callback.answer()
+        return
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
     user_id = callback.from_user.id
-    quote_id = int(callback.data.split(":")[1])
+    quote_id = int(parts[1])
     await db.delete_saved_quote(user_id, quote_id)
     await callback.answer("🗑 Видалено")
     await cb_my_saved_quotes(callback)

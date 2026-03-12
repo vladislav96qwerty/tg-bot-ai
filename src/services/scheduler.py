@@ -154,7 +154,8 @@ class ChannelScheduler:
                 return logger.warning("post_morning_movie: incomplete AI response")
 
             text = f"{res['post']}\n\n{res['signature']}"
-
+            if len(text) > 1024:
+                text = text[:1021] + "..."
 
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
@@ -304,6 +305,8 @@ class ChannelScheduler:
                 f"💬 {_escape_md(res.get('question', ''))}\n\n"
                 f"{_escape_md(res.get('signature', '— Нетик'))}"
             )
+            if len(text) > 1024:
+                text = text[:1021] + "..."
 
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
@@ -372,6 +375,8 @@ class ChannelScheduler:
                 f"🚫 *Не для тих...* {_escape_md(res.get('not_for_who', ''))}\n\n"
                 f"{_escape_md(res.get('signature', '— Нетик'))}"
             )
+            if len(text) > 1024:
+                text = text[:1021] + "..."
 
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
@@ -573,11 +578,10 @@ class ChannelScheduler:
                 return logger.warning("post_guess_movie: AI error")
 
             # Шукаємо фільм у TMDB для постера
-            search = await tmdb_service.search_movie(res["title"])
-            if not search:
+            search_results = await tmdb_service.search_movies(res["title"], limit=1)
+            if not search_results:
                 return logger.warning(f"post_guess_movie: movie not found in TMDB: {res['title']}")
-
-            movie = search[0]
+            movie = search_results[0]
             poster_path = movie.get("poster_path")
             poster_url = tmdb_service.get_poster_url(poster_path)
 

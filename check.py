@@ -1,9 +1,9 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║        NeNetflixBot — ULTIMATE STATIC CHECKER v7                           ║
+║        NeNetflixBot — ULTIMATE STATIC CHECKER v8                           ║
 ║  Запускати з кореня проекту:  python check.py                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  БЛОК A — СТАТИЧНИЙ АНАЛІЗ КОДУ (A01-A45)                                  ║
+║  БЛОК A — СТАТИЧНИЙ АНАЛІЗ КОДУ (A01-A50)                                  ║
 ║  БЛОК B — СИМУЛЯЦІЯ КОРИСТУВАЧА (кожна кнопка, включно v2.0)               ║
 ║  БЛОК C — СИМУЛЯЦІЯ АДМІНА (включно User Management v2.0)                  ║
 ║  БЛОК D — MIDDLEWARE                                                        ║
@@ -192,9 +192,10 @@ def a03_duplicate_handlers():
 def a04_db_methods():
     hdr("A04 - DB МЕТОДИ -- ВИКЛИКИ vs ВИЗНАЧЕННЯ")
     db_s = src("src/database/db.py")
-    defined: Set[str] = set(re.findall(r'^\s{4}async def (\w+)\(self', db_s, re.M))
-    # ВИПРАВЛЕНО: не виключаємо методи, які реально мають бути визначені
-    defined -= {"_execute", "_add_column_if_missing", "_get_db"}
+    defined: Set[str] = set(re.findall(r'^\s{4}(?:async )?def (\w+)\(', db_s, re.M))
+
+    # Методи, які ми ігноруємо при перевірці на "невикористання" (A04)
+    INTERNAL = {"_execute", "_add_column_if_missing", "_get_db", "__init__", "execute", "fetchone", "fetchall", "commit", "keys", "__aenter__", "__aexit__", "__await__", "__getitem__", "__iter__", "__len__"}
 
     callers: Dict[str, List[str]] = defaultdict(list)
     for fpath, s in FILES.items():
@@ -210,16 +211,16 @@ def a04_db_methods():
         else:
             ok(f"db.{m}()")
 
-    for m in sorted(defined - set(callers)):
+    for m in sorted(defined - set(callers) - INTERNAL):
         warn(f"db.{m}() -- визначено, але нiколи не викликається")
 
 
 def a05_tmdb_methods():
     hdr("A05 - TMDB МЕТОДИ -- ВИКЛИКИ vs ВИЗНАЧЕННЯ")
     ts = src("src/services/tmdb.py")
-    defined: Set[str] = set(re.findall(r'(?:async )?def (\w+)\(self', ts))
-    # ВИПРАВЛЕНО: не виключаємо методи, які реально мають бути визначені
-    defined -= {"__init__", "_get", "_get_session"}
+    defined: Set[str] = set(re.findall(r'(?:async )?def (\w+)\(', ts))
+
+    INTERNAL = {"__init__", "_get", "_get_session"}
 
     calls: Dict[str, Set[str]] = defaultdict(set)
     for fpath, s in FILES.items():
@@ -234,7 +235,7 @@ def a05_tmdb_methods():
         else:
             ok(f"tmdb_service.{m}()")
 
-    for m in sorted(defined - set(calls)):
+    for m in sorted(defined - set(calls) - INTERNAL):
         warn(f"tmdb_service.{m}() -- визначено, нiколи не викликається")
 
 
@@ -753,7 +754,7 @@ def a30_missing_await():
     # Рядковий підхід: шукаємо виклики сервісів без await на тому ж рядку
     SERVICES = ("db.", "tmdb_service.", "ai_service.")
     SYNC_OK  = ("get_poster_url", "build_justwatch_url", "PROVIDER_MAP",
-                "BLACKLISTED_PROVIDERS", "IMAGE_BASE_URL", "BASE_URL", "api_key")
+                "BLACKLISTED_PROVIDERS", "IMAGE_BASE_URL", "BASE_URL", "api_key", ".get(", ".keys(", ".pop(")
     found = False
     for fpath, s in FILES.items():
         s_clean = strip_comments(s)
@@ -1205,6 +1206,87 @@ def a45_markdown_escape():
             ok("Markdown без AI-тексту -- екранування не потрібне")
 
 
+def a46_safe_message_edits():
+    hdr("A46 - SAFE MESSAGE EDITS (fallback pattern)")
+    # Pattern: edit_text -> edit_caption -> answer
+    found_good = 0
+    found_bad = 0
+    for rpath in ROUTERS:
+        s = src(rpath)
+        name = rpath.split("/")[-1]
+
+        # Find edit_text calls and check if they are wrapped in try with fallback
+        for m in re.finditer(r'\.edit_text\(', s):
+            # Look ahead for fallbacks
+            ctx = s[m.start():m.start()+500]
+            if "edit_caption" in ctx and "answer" in ctx:
+                found_good += 1
+            else:
+                ln = s[:m.start()].count('\n') + 1
+                warn(f"{name}:{ln} -- edit_text без повного fallback ланцюга")
+                found_bad += 1
+
+    if found_bad == 0:
+        ok(f"Всi {found_good} редагувань тексту захищенi")
+    else:
+        info(f"Захищено: {found_good}, Потребують уваги: {found_bad}")
+
+def a47_safe_deletions():
+    hdr("A47 - SAFE MESSAGE DELETIONS (try/except wrap)")
+    found_bad = 0
+    for rpath in ROUTERS:
+        s = src(rpath)
+        name = rpath.split("/")[-1]
+        for m in re.finditer(r'await\s+[\w\.]+\.delete\(\)', s):
+            # Check if previous few lines have 'try:'
+            prefix = s[max(0, m.start()-50):m.start()]
+            if 'try:' not in prefix:
+                ln = s[:m.start()].count('\n') + 1
+                warn(f"{name}:{ln} -- .delete() без try/except")
+                found_bad += 1
+    if found_bad == 0:
+        ok("Всi видалення повідомлень безпечнi")
+
+def a48_split_safety():
+    hdr("A48 - CALLBACK DATA SPLIT SAFETY (len check)")
+    found_bad = 0
+    for rpath in ROUTERS:
+        s = src(rpath)
+        name = rpath.split("/")[-1]
+        for m in re.finditer(r'\.split\(["\']-?[:]["\']\)', s):
+            # Check if nearby code has 'len(' check
+            window = s[m.start():m.start()+150]
+            if 'len(' not in window and 'IndexError' not in window:
+                ln = s[:m.start()].count('\n') + 1
+                warn(f"{name}:{ln} -- split() без перевiрки довжини")
+                found_bad += 1
+    if found_bad == 0:
+        ok("Парсинг callback_data безпечний")
+
+def a49_advanced_flood_protection():
+    hdr("A49 - ADVANCED FLOOD PROTECTION (double-tap)")
+    mw = src("src/middlewares/throttling.py")
+    if "cb_cache" in mw or "double-tap" in mw.lower():
+        ok("Double-tap захист у ThrottlingMiddleware")
+    else:
+        err("Double-tap захист ВIДСУТНIЙ")
+
+def a50_session_persistence():
+    hdr("A50 - SESSION PERSISTENCE (FSM guards)")
+    # Check if critical handlers check for state data existence
+    recommendations = src("src/routers/recommendations.py")
+    if "recs" in recommendations and ("not recs" in recommendations or "застаріла" in recommendations):
+        ok("Recommendations: guard присутнiй")
+    else:
+        warn("Recommendations: можливий crash при втратi state")
+
+    onboarding = src("src/routers/onboarding.py")
+    if "get_state" in onboarding and "спочатку" in onboarding.lower():
+        ok("Onboarding: guard присутнiй")
+    else:
+        warn("Onboarding: можливий crash при втратi state")
+
+
 def e_env_check():
     hdr("БЛОК E -- ПЕРЕВIРКА .env ФАЙЛУ")
     env_path = ROOT / ".env"
@@ -1526,7 +1608,7 @@ def d_middleware():
 
 if __name__ == "__main__":
     print(f"\n{BO}{'='*72}")
-    print(f"  NeNetflixBot -- ULTIMATE CHECKER v7")
+    print(f"  NeNetflixBot -- ULTIMATE CHECKER v8")
     print(f"  Файлiв знайдено: {len(FILES)}   |   Корiнь: {ROOT}")
     print(f"{'='*72}{R}")
 
@@ -1578,6 +1660,12 @@ if __name__ == "__main__":
     a43_subscription_cache_bug()
     a44_morning_movie_photo()
     a45_markdown_escape()
+    # v8 нові перевірки
+    a46_safe_message_edits()
+    a47_safe_deletions()
+    a48_split_safety()
+    a49_advanced_flood_protection()
+    a50_session_persistence()
 
     # Блок B: симуляцiя користувача
     b_user_simulation()

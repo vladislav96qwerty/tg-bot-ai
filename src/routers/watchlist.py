@@ -27,10 +27,14 @@ async def _render_watchlist(message: types.Message, user_id: int, status: str):
     for item in items[:10]:
         keyboard.append([InlineKeyboardButton(text=item["title_ua"], callback_data=f"wl_manage:{item['tmdb_id']}")])
     keyboard.append([InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")])
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
     try:
-        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+        await message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     except Exception:
-        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+        try:
+            await message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
 async def _render_manage(message: types.Message, user_id: int, tmdb_id: int):
@@ -46,10 +50,14 @@ async def _render_manage(message: types.Message, user_id: int, tmdb_id: int):
         [InlineKeyboardButton(text="🗑 Видалити", callback_data=f"wl_del:{tmdb_id}")],
         [InlineKeyboardButton(text="◀️ До списку", callback_data=f"wl_tab:{item['status']}")],
     ]
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
     try:
-        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+        await message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     except Exception:
-        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+        try:
+            await message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
 @router.callback_query(F.data.startswith("wl_add:"))
@@ -57,8 +65,12 @@ async def cb_add_to_watchlist(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
+    await callback.answer()
     user_id = callback.from_user.id
-    tmdb_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    tmdb_id = int(parts[1])
     has_premium = await is_premium(user_id, callback.bot)
     if not has_premium:
         count = await db.get_watchlist_count(user_id)
@@ -79,49 +91,21 @@ async def cb_add_to_watchlist(callback: types.CallbackQuery):
         await callback.answer("⚠️ Помилка отримання даних фільму.", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("rate:"))
-async def cb_rate_movie_start(callback: types.CallbackQuery):
-    if not callback.message:
-        await callback.answer()
-        return
-    tmdb_id = int(callback.data.split(":")[1])
-    row1 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(1, 6)]
-    row2 = [InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{tmdb_id}:{i}") for i in range(6, 11)]
-    try:
-        await callback.message.edit_caption(
-            caption="⭐ *Оціни фільм від 1 до 10:*",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[row1, row2, [InlineKeyboardButton(text="◀️ Назад", callback_data=f"movie_id:{tmdb_id}")]]),
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"Помилка редагування повідомлення для оцінки: {e}")
-    await callback.answer()
 
 
-@router.callback_query(F.data.startswith("set_rating:"))
-async def cb_set_rating(callback: types.CallbackQuery):
-    if not callback.message:
-        await callback.answer()
-        return
-    params = callback.data.split(":")
-    tmdb_id, rating, user_id = int(params[1]), int(params[2]), callback.from_user.id
-    await db.add_rating(user_id, tmdb_id, rating)
-    await callback.answer(f"⭐ Твоя оцінка: {rating}/10")
-    await callback.message.answer("⭐ *Оцінка збережена!*", parse_mode="Markdown")
-    from src.routers.movie import show_movie_details
-    # ✅ FIX #5: передаємо user_id щоб картка показувала "🏷 Твоя оцінка: X/10"
-    await show_movie_details(callback.message, tmdb_id, edit=True, user_id=callback.from_user.id)
-
-
-# ✅ FIX: "menu_watchlist" містить ":" тому старий split(":")[1] давав IndexError
+# ✅ FIX: "menu_watchlist" не містить ":" тому старий split(":")[1] міг дати IndexError
 @router.callback_query(F.data == "menu_watchlist")
 @router.callback_query(F.data.startswith("wl_tab:"))
 async def cb_show_watchlist(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
+    await callback.answer()
     user_id = callback.from_user.id
-    status = callback.data.split(":")[1] if callback.data.startswith("wl_tab:") else "want"
+    # Використовуємо .split(":", 1) для безпечного парсингу
+    parts = callback.data.split(":", 1)
+    status = parts[1] if len(parts) > 1 else "want"
+
     await _render_watchlist(callback.message, user_id, status)
     await callback.answer()
 
@@ -131,7 +115,10 @@ async def cb_manage_item(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    await _render_manage(callback.message, callback.from_user.id, int(callback.data.split(":")[1]))
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    await _render_manage(callback.message, callback.from_user.id, int(parts[1]))
     await callback.answer()
 
 
@@ -140,7 +127,10 @@ async def cb_update_status(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    _, tmdb_id, new_status = callback.data.split(":")
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        return await callback.answer("Помилка.")
+    _, tmdb_id, new_status = parts
     await db.update_watchlist_status(callback.from_user.id, int(tmdb_id), new_status)
     await callback.answer("✅ Статус оновлено")
     await _render_manage(callback.message, callback.from_user.id, int(tmdb_id))
@@ -151,7 +141,10 @@ async def cb_delete_item(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    tmdb_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    tmdb_id = int(parts[1])
     await db.delete_from_watchlist(callback.from_user.id, tmdb_id)
     await callback.answer("🗑 Видалено")
     await _render_watchlist(callback.message, callback.from_user.id, "want")

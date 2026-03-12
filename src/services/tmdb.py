@@ -1,6 +1,7 @@
 import aiohttp
 import logging
 import json
+import random
 from typing import Any, Dict, List, Optional
 from src.config import config
 
@@ -89,7 +90,6 @@ class TMDBService:
         data = await self._get("/person/popular", {"language": "uk-UA"})
         if not data or not data.get("results"):
             return None
-        import random
         return random.choice(data["results"][:10])
 
     async def search_movie(self, query: str) -> Optional[Dict]:

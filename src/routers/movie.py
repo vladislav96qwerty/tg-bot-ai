@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import time
 from typing import List, Dict  # ✅ FIX #2: прибрано невикористаний Optional
 from urllib.parse import quote_plus
 
@@ -288,7 +287,7 @@ async def perform_search(message: types.Message, query: str, state: FSMContext):
 
     # Баг #27 fix: показуємо індикатор набору перед запитом
     try:
-        await message.bot.send_chat_action(chat_id=message.from_user.id, action="typing")
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     except Exception:
         pass
 
@@ -314,7 +313,10 @@ async def cb_movie_details(callback: types.CallbackQuery):
         await callback.answer()
         return
     """Handler for displaying movie card."""
-    movie_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка даних.")
+    movie_id = int(parts[1])
     await callback.answer()
 
     # ✅ FIX: send new first, then delete old to avoid flickering
@@ -322,8 +324,8 @@ async def cb_movie_details(callback: types.CallbackQuery):
     await show_movie_details(callback.message, movie_id, edit=False, user_id=callback.from_user.id)
     try:
         await old_msg.delete()
-    except Exception as e:
-        logger.error(f"Помилка: {e}")
+    except Exception:
+        pass
 
 
 # Баг #5 fix: повноцінний обробник кнопки "⭐ Оцінити"
@@ -332,14 +334,17 @@ async def cb_rate_movie(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    movie_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    movie_id = int(parts[1])
 
     row1 = [
-        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{movie_id}:{i}")
         for i in range(1, 6)
     ]
     row2 = [
-        InlineKeyboardButton(text=str(i), callback_data=f"set_rate:{movie_id}:{i}")
+        InlineKeyboardButton(text=str(i), callback_data=f"set_rating:{movie_id}:{i}")
         for i in range(6, 11)
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -359,12 +364,14 @@ async def cb_rate_movie(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("set_rate:"))
+@router.callback_query(F.data.startswith("set_rating:"))
 async def cb_set_rating(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
     parts = callback.data.split(":")
+    if len(parts) < 3:
+        return await callback.answer("Помилка даних.")
     movie_id = int(parts[1])
     rating = int(parts[2])
     user_id = callback.from_user.id
@@ -381,7 +388,10 @@ async def cb_similar_movies(callback: types.CallbackQuery):
         await callback.answer()
         return
     """Handler for 'Similar movies' button."""
-    movie_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    movie_id = int(parts[1])
     await callback.answer("🎬 Шукаю схожі фільми...")
 
     similar = await tmdb_service.get_similar_movies(movie_id)
@@ -425,6 +435,11 @@ async def cb_back_to_search(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     query = data.get("last_query")
     results = data.get("last_results")
+
+    if not query or not results:
+        await callback.answer("⏳ Результати пошуку застаріли.", show_alert=True)
+        from src.routers.common import cb_back_to_menu
+        return await cb_back_to_menu(callback, state)
 
     await callback.answer()
 

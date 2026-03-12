@@ -13,7 +13,7 @@ from aiogram.types import (
 from datetime import datetime
 from src.database.db import db
 from src.config import config
-from src.keyboards.main_menu import get_main_menu_kb, get_onboarding_genres_kb
+from src.keyboards.main_menu import get_main_menu_kb
 from src.routers.onboarding import OnboardingStates
 
 router = Router()
@@ -147,8 +147,11 @@ async def cb_back_to_menu(callback: types.CallbackQuery, state: FSMContext = Non
         try:
             await callback.message.edit_text(menu_text, reply_markup=markup, parse_mode="HTML")
         except Exception:
-            await callback.message.answer(menu_text, reply_markup=markup, parse_mode="HTML")
-            await callback.message.answer("Клавіатура оновлена ⬇️", reply_markup=PERSISTENT_MENU)
+            try:
+                await callback.message.edit_caption(caption=menu_text, reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(menu_text, reply_markup=markup, parse_mode="HTML")
+                await callback.message.answer("Клавіатура оновлена ⬇️", reply_markup=PERSISTENT_MENU)
     await callback.answer()
 
 
@@ -184,12 +187,15 @@ async def cb_subscribe_check_real(callback: types.CallbackQuery):
             "Дякуємо за підписку! ✅ Тепер тобі доступні всі Premium функції.",
             show_alert=True,
         )
-        await callback.message.edit_text(
-            "Привіт! 👋 Я Нетик — твій персональний гід у світі кіно.\n\n"
-            "Обирай розділ нижче:",
-            reply_markup=get_main_menu_kb(True),
-            parse_mode="HTML",
-        )
+        sub_text = "Привіт! 👋 Я Нетик — твій персональний гід у світі кіно.\n\nОбирай розділ нижче:"
+        sub_kb = get_main_menu_kb(True)
+        try:
+            await callback.message.edit_text(sub_text, reply_markup=sub_kb, parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_caption(caption=sub_text, reply_markup=sub_kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(sub_text, reply_markup=sub_kb, parse_mode="HTML")
     else:
         await callback.answer("Ви все ще не підписані на канал 📢", show_alert=True)
 

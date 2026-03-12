@@ -33,8 +33,14 @@ async def start_onboarding(message: types.Message, state: FSMContext):
 
 
 # FIX: added OnboardingStates.GENRES filter — prevents stale buttons from triggering
-@router.callback_query(F.data.startswith("genre_"), OnboardingStates.GENRES)
+@router.callback_query(F.data.startswith("genre_"))
 async def cb_genre_select(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if await state.get_state() != OnboardingStates.GENRES:
+        return await callback.answer("⏳ Будь ласка, почніть спочатку (/start)", show_alert=True)
     if not callback.message:
         await callback.answer()
         return
@@ -52,8 +58,14 @@ async def cb_genre_select(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "onboarding_genres_done", OnboardingStates.GENRES)
+@router.callback_query(F.data == "onboarding_genres_done")
 async def cb_genres_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if await state.get_state() != OnboardingStates.GENRES:
+        return await callback.answer("⏳ Будь ласка, почніть спочатку (/start)", show_alert=True)
     if not callback.message:
         await callback.answer()
         return
@@ -64,18 +76,26 @@ async def cb_genres_done(callback: types.CallbackQuery, state: FSMContext):
         return await callback.answer("🎬 Будь ласка, обери хоча б 2 жанри!", show_alert=True)
 
     await state.set_state(OnboardingStates.FREQUENCY)
+    freq_text = "Крок 2/3: Як часто дивишся кіно? 🍿"
+    freq_kb = get_onboarding_frequency_kb()
     try:
-        await callback.message.edit_text(
-            "Крок 2/3: Як часто дивишся кіно? 🍿",
-            reply_markup=get_onboarding_frequency_kb()
-        )
-    except Exception as e:
-        logger.debug(f"Failed to edit frequency message: {e}")
+        await callback.message.edit_text(freq_text, reply_markup=freq_kb)
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=freq_text, reply_markup=freq_kb)
+        except Exception:
+            await callback.message.answer(freq_text, reply_markup=freq_kb)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("freq_"), OnboardingStates.FREQUENCY)
+@router.callback_query(F.data.startswith("freq_"))
 async def cb_freq_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if await state.get_state() != OnboardingStates.FREQUENCY:
+        return await callback.answer("⏳ Будь ласка, почніть спочатку (/start)", show_alert=True)
     if not callback.message:
         await callback.answer()
         return
@@ -83,15 +103,26 @@ async def cb_freq_done(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(frequency=freq)
 
     await state.set_state(OnboardingStates.PERIOD)
-    await callback.message.edit_text(
-        "Крок 3/3: Якому періоду надаєш перевагу? 🎞",
-        reply_markup=get_onboarding_period_kb()
-    )
+    period_text = "Крок 3/3: Якому періоду надаєш перевагу? 🎞"
+    period_kb = get_onboarding_period_kb()
+    try:
+        await callback.message.edit_text(period_text, reply_markup=period_kb)
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=period_text, reply_markup=period_kb)
+        except Exception:
+            await callback.message.answer(period_text, reply_markup=period_kb)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("period_"), OnboardingStates.PERIOD)
+@router.callback_query(F.data.startswith("period_"))
 async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
+    if not callback.message:
+        await callback.answer()
+        return
+
+    if await state.get_state() != OnboardingStates.PERIOD:
+        return await callback.answer("⏳ Будь ласка, почніть спочатку (/start)", show_alert=True)
     if not callback.message:
         await callback.answer()
         return
@@ -110,7 +141,14 @@ async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
         period=period
     )
 
-    await callback.message.edit_text("⏳ Нетик аналізує твої смаки... Зачекай хвилинку.")
+    wait_text = "⏳ Нетик аналізує твої смаки... Зачекай хвилинку."
+    try:
+        await callback.message.edit_text(wait_text)
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=wait_text)
+        except Exception:
+            await callback.message.answer(wait_text)
 
     # Generate AI taste profile
     ai_profile_prompt = (
@@ -140,6 +178,6 @@ async def cb_period_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(welcome_back, reply_markup=get_main_menu_kb(has_premium), parse_mode="HTML")
     try:
         await callback.message.delete()
-    except Exception as e:
-        logger.debug(f"Failed to delete onboarding message: {e}")
+    except Exception:
+        pass
     await callback.answer()

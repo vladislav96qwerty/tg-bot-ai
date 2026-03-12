@@ -48,12 +48,18 @@ async def show_next_swipe(callback: types.CallbackQuery):
     available = [m for m in movies if m.get("id") not in swiped_ids]
 
     if not available:
-        return await callback.message.edit_text(
-            "🎉 Фільми закінчились! Спробуй пізніше.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
-            ]),
-        )
+        no_sw_text = "🎉 Фільми закінчились! Спробуй пізніше."
+        no_sw_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Меню", callback_data="back_to_menu")],
+        ])
+        try:
+            await callback.message.edit_text(no_sw_text, reply_markup=no_sw_kb)
+        except Exception:
+            try:
+                await callback.message.edit_caption(caption=no_sw_text, reply_markup=no_sw_kb)
+            except Exception:
+                await callback.message.answer(no_sw_text, reply_markup=no_sw_kb)
+        return
 
     movie = available[0]
     overview = movie.get("overview") or ""
@@ -99,7 +105,10 @@ async def handle_swipe(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    action, tmdb_id_str = callback.data.split(":")
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    action, tmdb_id_str = parts
     tmdb_id = int(tmdb_id_str)
     user_id = callback.from_user.id
 
