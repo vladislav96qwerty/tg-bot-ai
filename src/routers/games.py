@@ -55,8 +55,8 @@ async def start_guess_game(callback: types.CallbackQuery):
 
     try:
         await callback.message.delete()
-    except Exception as e:
-        logger.debug(f"Failed to delete guess game message: {e}")
+    except Exception:
+        pass
 
     await callback.answer()
     await callback.message.answer_photo(
@@ -73,6 +73,8 @@ async def handle_guess(callback: types.CallbackQuery):
         await callback.answer()
         return
     params = callback.data.split(":")
+    if len(params) < 3:
+        return await callback.answer("Невірні дані.")
     tmdb_id = int(params[1])
     guess = float(params[2])
     

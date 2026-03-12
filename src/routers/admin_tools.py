@@ -94,19 +94,15 @@ async def cb_admin_panel(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await state.clear()
+    ap_text = "🛠 <b>Адмін-panel</b>\n\nОберіть дію для керування ботом та каналом:"
+    ap_kb = _admin_menu_kb()
     try:
-        await callback.message.edit_text(
-            "🛠 <b>Адмін-panel</b>\n\nОберіть дію для керування ботом та каналом:",
-            reply_markup=_admin_menu_kb(),
-            parse_mode="HTML",
-        )
-    except Exception as e:
-        logger.error(f"Помилка редагування адмін-панелі: {e}")
-        await callback.message.answer(
-            "🛠 <b>Адмін-panel</b>\n\nОберіть дію для керування ботом та каналом:",
-            reply_markup=_admin_menu_kb(),
-            parse_mode="HTML",
-        )
+        await callback.message.edit_text(ap_text, reply_markup=ap_kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=ap_text, reply_markup=ap_kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(ap_text, reply_markup=ap_kb, parse_mode="HTML")
     await callback.answer()
 
 
@@ -115,7 +111,10 @@ async def cb_delete_msg(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.answer()
 
 
@@ -148,16 +147,22 @@ async def admin_create_battle(callback: types.CallbackQuery):
         safe_title_a = html.escape(movie_a["title"])
         safe_title_b = html.escape(movie_b["title"])
 
-        await callback.message.edit_text(
+        batt_text = (
             f"✅ <b>Опитування створено!</b>\n\n"
             f"1. {safe_title_a}\n"
             f"2. {safe_title_b}\n\n"
-            f"ID: <code>{poll_id}</code>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
-            ]),
+            f"ID: <code>{poll_id}</code>"
         )
+        batt_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
+        ])
+        try:
+            await callback.message.edit_text(batt_text, reply_markup=batt_kb, parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_caption(caption=batt_text, reply_markup=batt_kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(batt_text, reply_markup=batt_kb, parse_mode="HTML")
     except Exception as e:
         logger.error(f"admin_create_battle error: {e}", exc_info=True)
         await callback.answer(f"Помилка: {e}", show_alert=True)
@@ -185,13 +190,16 @@ async def admin_stats(callback: types.CallbackQuery):
         f"⭐ Оцінок виставлено: <code>{stats.get('total_ratings', 0)}</code>\n"
         f"🏆 Спонсорів: <code>{stats.get('total_sponsors', 0)}</code>"
     )
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
-        ]),
-        parse_mode="HTML",
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
 
@@ -203,14 +211,20 @@ async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await state.set_state(BroadcastStates.waiting_content)
-    await callback.message.edit_text(
+    bc_text = (
         "📢 <b>Надішліть повідомлення для розсилки.</b>\n\n"
-        "Це може бути текст, фото з підписом або відео.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Скасувати", callback_data="admin_panel")],
-        ]),
+        "Це може бути текст, фото з підписом або відео."
     )
+    bc_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Скасувати", callback_data="admin_panel")],
+    ])
+    try:
+        await callback.message.edit_text(bc_text, reply_markup=bc_kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=bc_text, reply_markup=bc_kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(bc_text, reply_markup=bc_kb, parse_mode="HTML")
     await callback.answer()
 
 
@@ -234,8 +248,12 @@ async def preview_broadcast(message: types.Message, state: FSMContext):
 @router.callback_query(F.data == "confirm_broadcast", BroadcastStates.confirm, admin_filter)
 async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
-    msg_id = data["broadcast_msg_id"]
-    from_chat_id = data["broadcast_chat_id"]
+    msg_id = data.get("broadcast_msg_id")
+    from_chat_id = data.get("broadcast_chat_id")
+
+    if not msg_id or not from_chat_id:
+        return await callback.answer("❌ Дані розсилки втрачено. Спробуйте знову.", show_alert=True)
+
     admin_id = callback.from_user.id
 
     # Отримуємо загальну кількість користувачів для лічильника
@@ -247,12 +265,17 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
     # ✅ FIX #23: скидаємо флаг скасування
     _broadcast_cancel.pop(admin_id, None)
 
-    await callback.message.edit_text(
-        f"⏳ Розсилка почалася для {total_users} юзерів...",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
-        ]),
-    )
+    run_bc_text = f"⏳ Розсилка почалася для {total_users} юзерів..."
+    run_bc_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
+    ])
+    try:
+        await callback.message.edit_text(run_bc_text, reply_markup=run_bc_kb)
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=run_bc_text, reply_markup=run_bc_kb)
+        except Exception:
+            await callback.message.answer(run_bc_text, reply_markup=run_bc_kb)
 
     batch_size = 50
     offset = 0
@@ -283,15 +306,17 @@ async def run_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: B
 
         offset += batch_size
         if offset > 0 and offset % 500 == 0:
+            prog_text = f"⏳ Розсилка: оброблено {offset}/{total_users}..."
+            prog_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
+            ])
             try:
-                await callback.message.edit_text(
-                    f"⏳ Розсилка: оброблено {offset}/{total_users}...",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="⏹ Зупинити розсилку", callback_data="cancel_broadcast")],
-                    ]),
-                )
-            except Exception as e:
-                logger.warning(f"Broadcast progress update error: {e}")
+                await callback.message.edit_text(prog_text, reply_markup=prog_kb)
+            except Exception:
+                try:
+                    await callback.message.edit_caption(caption=prog_text, reply_markup=prog_kb)
+                except Exception:
+                    pass
 
     await state.clear()
 
@@ -323,13 +348,17 @@ async def user_manage_start(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await state.set_state(UserSearchStates.waiting_query)
-    await callback.message.edit_text(
-        "👤 <b>Введіть ID або @username користувача для пошуку:</b>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
-        ]),
-    )
+    um_text = "👤 <b>Введіть ID або @username користувача для пошуку:</b>"
+    um_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")],
+    ])
+    try:
+        await callback.message.edit_text(um_text, parse_mode="HTML", reply_markup=um_kb)
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=um_text, parse_mode="HTML", reply_markup=um_kb)
+        except Exception:
+            await callback.message.answer(um_text, parse_mode="HTML", reply_markup=um_kb)
     await callback.answer()
 
 
@@ -413,12 +442,18 @@ async def _show_user_card(source: types.Message | types.CallbackQuery, user_data
         try:
             await source.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
         except Exception:
-            await source.message.answer(text, reply_markup=kb, parse_mode="HTML")
+            try:
+                await source.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await source.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("adm_user_view:"), admin_filter)
 async def cb_admin_user_view(callback: types.CallbackQuery, state: FSMContext):
-    user_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    user_id = int(parts[1])
     user_data = await db.get_user(user_id)
     if user_data:
         await state.clear()
@@ -429,6 +464,8 @@ async def cb_admin_user_view(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("adm_set:"), admin_filter)
 async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
     params = callback.data.split(":")
+    if len(params) < 3:
+        return await callback.answer("Помилка.")
     action = params[1]
     user_id = int(params[2])
 
@@ -540,6 +577,9 @@ async def handle_user_edit(callback: types.CallbackQuery, state: FSMContext):
 async def process_ban_reason(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = data.get("target_user_id")
+    if not user_id:
+        await state.clear()
+        return await message.answer("❌ Сесію втрачено. Знайдіть користувача знову.")
     reason = message.text.strip()
     admin_id = message.from_user.id
     await db.ban_user(admin_id, user_id, reason)
@@ -554,6 +594,9 @@ async def process_ban_reason(message: types.Message, state: FSMContext):
 async def process_admin_note(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = data.get("target_user_id")
+    if not user_id:
+        await state.clear()
+        return await message.answer("❌ Сесію втрачено. Знайдіть користувача знову.")
     note = message.text.strip()
     admin_id = message.from_user.id
     await db.set_admin_note(admin_id, user_id, note)
@@ -567,6 +610,9 @@ async def process_admin_note(message: types.Message, state: FSMContext):
 async def process_admin_msg(message: types.Message, state: FSMContext):
     data = await state.get_data()
     user_id = data.get("target_user_id")
+    if not user_id:
+        await state.clear()
+        return await message.answer("❌ Сесію втрачено. Знайдіть користувача знову.")
     msg_text = message.text.strip()
     try:
         await message.bot.send_message(user_id, f"✉️ <b>Повідомлення від адміна:</b>\n\n{msg_text}", parse_mode="HTML")
@@ -591,9 +637,16 @@ async def view_admin_log(callback: types.CallbackQuery):
     text = "📋 <b>Лог дій адміна:</b>\n\n"
     for log in logs:
         text += f"• {log.get('action')}: {log.get('details','')[:30]}\n"
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")]
-    ]), parse_mode="HTML")
+    ])
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_feedback", admin_filter)
@@ -610,7 +663,14 @@ async def view_feedback(callback: types.CallbackQuery):
         text += f"#{item['id']} [{item['type']}]: {item['text'][:50]}...\n"
         keyboard.append([InlineKeyboardButton(text=f"👁 Переглянути #{item['id']}", callback_data=f"feedback_view:{item['id']}")])
     keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("feedback_view:"), admin_filter)
@@ -618,7 +678,10 @@ async def view_single_feedback(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer()
         return
-    fb_id = int(callback.data.split(":")[1])
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
+    fb_id = int(parts[1])
     item = await db.get_feedback_by_id(fb_id)
     if not item:
         return await callback.answer("Фідбек не знайдено", show_alert=True)
@@ -636,7 +699,13 @@ async def view_single_feedback(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="✅ Виконано", callback_data=f"feedback_status:{fb_id}:done")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_feedback")]
     ])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -646,6 +715,8 @@ async def handle_feedback_status(callback: types.CallbackQuery):
         await callback.answer()
         return
     parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка.")
     fb_id = int(parts[1])
     # ✅ FIX #4: читаємо статус з callback_data ("feedback_status:42:done")
     # раніше завжди ставилось "reviewed" ігноруючи реальний статус з кнопки

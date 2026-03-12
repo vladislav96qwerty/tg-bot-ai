@@ -42,10 +42,14 @@ async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext
         return await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
     await callback.answer()
+    rec_wait_text = "🤖 <b>Нетик вимикає логіку і вмикає інтуїцію...</b>\nАналізую твої смаки, зачекай трішки."
     try:
-        await callback.message.edit_text("🤖 <b>Нетик вимикає логіку і вмикає інтуїцію...</b>\nАналізую твої смаки, зачекай трішки.", parse_mode="HTML")
-    except Exception as e:
-        logger.debug(f"Failed to edit recommendations message: {e}")
+        await callback.message.edit_text(rec_wait_text, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=rec_wait_text, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(rec_wait_text, parse_mode="HTML")
     try:
         await callback.bot.send_chat_action(chat_id=callback.from_user.id, action="typing")
     except Exception:
@@ -54,13 +58,16 @@ async def cb_ai_recommendations(callback: types.CallbackQuery, state: FSMContext
     recs = await recommender_service.get_recommendations(user_id)
 
     if not recs:
+        no_rec_text = "😔 Нетик поки не зміг підібрати нічого особливого. Спробуй оцінити більше фільмів!"
+        no_rec_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Меню", callback_data="back_to_menu")]])
         try:
-            return await callback.message.edit_text(
-                "😔 Нетик поки не зміг підібрати нічого особливого. Спробуй оцінити більше фільмів!",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Меню", callback_data="back_to_menu")]])
-            )
+            await callback.message.edit_text(no_rec_text, reply_markup=no_rec_kb)
         except Exception:
-            return
+            try:
+                await callback.message.edit_caption(caption=no_rec_text, reply_markup=no_rec_kb)
+            except Exception:
+                await callback.message.answer(no_rec_text, reply_markup=no_rec_kb)
+        return
 
     await state.set_state(RecommendationStates.VIEWING)
     await state.update_data(ai_recs=recs, current_index=0)
@@ -110,22 +117,32 @@ async def show_recommendation_card(message: types.Message, movie: Dict[str, Any]
         await message.answer_photo(photo=photo_url, caption=text, reply_markup=markup, parse_mode="HTML")
         try:
             await message.delete()
-        except Exception as e:
-            logger.debug(f"Failed to delete recs message: {e}")
+        except Exception:
+            pass
     else:
         try:
             await message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        except Exception as e:
-            logger.warning(f"Failed to edit recs message: {e}")
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            try:
+                await message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
-@router.callback_query(F.data == "next_ai_rec", RecommendationStates.VIEWING)
+@router.callback_query(F.data == "next_ai_rec")
 async def cb_next_ai_rec(callback: types.CallbackQuery, state: FSMContext):
     if not callback.message:
         await callback.answer()
         return
+
+    current_state = await state.get_state()
     data = await state.get_data()
     recs = data.get("ai_recs", [])
+
+    if current_state != RecommendationStates.VIEWING or not recs:
+        await callback.answer("⏳ Сесія рекомендацій застаріла. Оновіть меню.", show_alert=True)
+        from src.routers.common import cb_back_to_menu
+        return await cb_back_to_menu(callback, state)
+
     index = data.get("current_index", 0) + 1
 
     if index < len(recs):

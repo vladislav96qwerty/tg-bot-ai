@@ -110,7 +110,13 @@ async def show_profile(event: Union[types.Message, types.CallbackQuery]):
     markup = get_profile_keyboard(user_id, notifs_on)
 
     if isinstance(event, types.CallbackQuery):
-        await event.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        try:
+            await event.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            try:
+                await event.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                await event.message.answer(text, reply_markup=markup, parse_mode="HTML")
         await event.answer()
     else:
         await event.answer(text, reply_markup=markup, parse_mode="HTML")
@@ -164,9 +170,11 @@ async def cb_profile_referral(callback: types.CallbackQuery):
 
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    except Exception as e:
-        logger.warning(f"Failed to edit profile message: {e}")
-        await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
