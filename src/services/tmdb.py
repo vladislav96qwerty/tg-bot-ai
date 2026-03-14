@@ -101,8 +101,15 @@ class TMDBService:
         data = await self._get("/movie/popular", {"page": page})
         return data.get("results", [])
 
+    async def get_now_playing(self, page: int = 1) -> List[Dict[str, Any]]:
+        data = await self._get("/movie/now_playing", {"page": page})
+        return data.get("results", [])
+
     async def get_popular_movies(self, page: int = 1) -> List[Dict[str, Any]]:
-        """Alias for get_popular — for compatibility."""
+        """Returns now playing movies if possible, fallback to popular."""
+        now_playing = await self.get_now_playing(page=page)
+        if now_playing:
+            return now_playing
         return await self.get_popular(page=page)
 
     def get_poster_url(self, path: Optional[str]) -> Optional[str]:

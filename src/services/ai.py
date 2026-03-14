@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Optional, Union
 
 from google import genai
@@ -17,31 +18,41 @@ class AIService:
         self.gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
 
     async def ask(
-        self, prompt: str, expect_json: bool = True
+        self, prompt: str, expect_json: bool = True, retries: int = 2
     ) -> Union[Dict[str, Any], str, None]:
         """
-        Main method to get AI response.
+        Main method to get AI response with retry logic.
         First tries Groq (Llama 3.3 70B), then falls back to Gemini 2.0 Flash.
         """
-        try:
-            logger.info("Requesting Groq Llama 3.3...")
-            response = await self._ask_groq(prompt, expect_json)
-            if response is not None:
-                logger.info("Success using Groq")
-                return response
-        except Exception as e:
-            logger.error(f"Groq API error: {e}")
+        for attempt in range(retries + 1):
+            try:
+                logger.info(f"Requesting Groq Llama 3.3 (attempt {attempt + 1})...")
+                response = await self._ask_groq(prompt, expect_json)
+                if response is not None:
+                    logger.info("Success using Groq")
+                    return response
+                logger.warning(f"Groq returned None on attempt {attempt + 1}")
+            except Exception as e:
+                logger.error(f"Groq API error on attempt {attempt + 1}: {e}")
 
-        try:
-            logger.info("Requesting Gemini 2.0 Flash (fallback)...")
-            response = await self._ask_gemini(prompt, expect_json)
-            if response is not None:
-                logger.info("Success using Gemini fallback")
-                return response
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
+            if attempt < retries:
+                await asyncio.sleep(2 ** attempt)
 
-        logger.error("Both AI services failed.")
+        for attempt in range(retries + 1):
+            try:
+                logger.info(f"Requesting Gemini 2.0 Flash (fallback, attempt {attempt + 1})...")
+                response = await self._ask_gemini(prompt, expect_json)
+                if response is not None:
+                    logger.info("Success using Gemini fallback")
+                    return response
+                logger.warning(f"Gemini returned None on attempt {attempt + 1}")
+            except Exception as e:
+                logger.error(f"Gemini API error on attempt {attempt + 1}: {e}")
+
+            if attempt < retries:
+                await asyncio.sleep(2 ** attempt)
+
+        logger.error("Both AI services failed after multiple attempts.")
         return None
 
     async def _ask_groq(self, prompt: str, expect_json: bool) -> Any:

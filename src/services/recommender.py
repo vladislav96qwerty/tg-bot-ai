@@ -21,8 +21,13 @@ class RecommenderService:
         ratings_summary = await db.get_user_ratings_summary(user_id)
         watched_titles = await db.get_watched_titles(user_id)
         
+        # 1.5 Get fresh releases for context
+        fresh_releases = await tmdb_service.get_popular_movies(page=1)
+        fresh_context = ", ".join([f"{m.get('title')} ({m.get('release_date', '')[:4]})" for m in fresh_releases[:10]])
+
         # 2. Prepare Prompt
         prompt = RECOMMENDATION_PROMPT.format(
+            fresh_releases_context=fresh_context,
             genres=prefs.get("genres", "будь-які"),
             watched_titles=", ".join(watched_titles) if watched_titles else "нічого",
             avg_rating=ratings_summary.get("avg", 0),

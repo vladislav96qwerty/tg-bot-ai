@@ -175,21 +175,27 @@ class ChannelScheduler:
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
             poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
+            bot_msg = None
             if poster_url:
-                bot_msg = await self.bot.send_photo(
-                    chat_id=config.CHANNEL_ID,
-                    photo=poster_url,
-                    caption=text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard,
-                )
-            else:
+                try:
+                    bot_msg = await self.bot.send_photo(
+                        chat_id=config.CHANNEL_ID,
+                        photo=poster_url,
+                        caption=text,
+                        parse_mode="HTML",
+                        reply_markup=keyboard,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send photo for morning movie: {e}")
+
+            if not bot_msg:
                 bot_msg = await self.bot.send_message(
                     chat_id=config.CHANNEL_ID,
                     text=text,
                     parse_mode="HTML",
                     reply_markup=keyboard,
                 )
+
             await db.save_channel_post("morning", res["post"][:100], text, movie_id, bot_msg.message_id)
             logger.info("Morning post sent.")
         except Exception as e:
@@ -267,13 +273,24 @@ class ChannelScheduler:
             except Exception as e:
                 logger.warning(f"post_quote_of_day: save_quote button error: {e}")
 
-            bot_msg = await self.bot.send_photo(
-                chat_id=config.CHANNEL_ID,
-                photo=FSInputFile(img_path),
-                caption=caption,
-                parse_mode="Markdown",
-                reply_markup=keyboard,
-            )
+            bot_msg = None
+            try:
+                bot_msg = await self.bot.send_photo(
+                    chat_id=config.CHANNEL_ID,
+                    photo=FSInputFile(img_path),
+                    caption=caption,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send quote photo: {e}")
+                bot_msg = await self.bot.send_message(
+                    chat_id=config.CHANNEL_ID,
+                    text=caption,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+
             await db.save_channel_post("quote", res["quote_ua"][:100], caption, None, bot_msg.message_id)
             logger.info("Quote post sent.")
         except Exception as e:
@@ -326,15 +343,20 @@ class ChannelScheduler:
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
             poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
+            bot_msg = None
             if poster_url:
-                bot_msg = await self.bot.send_photo(
-                    chat_id=config.CHANNEL_ID,
-                    photo=poster_url,
-                    caption=text,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard,
-                )
-            else:
+                try:
+                    bot_msg = await self.bot.send_photo(
+                        chat_id=config.CHANNEL_ID,
+                        photo=poster_url,
+                        caption=text,
+                        parse_mode="Markdown",
+                        reply_markup=keyboard,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send controversial photo: {e}")
+
+            if not bot_msg:
                 bot_msg = await self.bot.send_message(
                     chat_id=config.CHANNEL_ID,
                     text=text,
@@ -396,15 +418,20 @@ class ChannelScheduler:
             keyboard = await _build_watch_keyboard(movie_id, title) if movie_id else None
 
             poster_url = tmdb_service.get_poster_url(movie.get("poster_path"))
+            bot_msg = None
             if poster_url:
-                bot_msg = await self.bot.send_photo(
-                    chat_id=config.CHANNEL_ID,
-                    photo=poster_url,
-                    caption=text,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard,
-                )
-            else:
+                try:
+                    bot_msg = await self.bot.send_photo(
+                        chat_id=config.CHANNEL_ID,
+                        photo=poster_url,
+                        caption=text,
+                        parse_mode="Markdown",
+                        reply_markup=keyboard,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send hidden gem photo: {e}")
+
+            if not bot_msg:
                 bot_msg = await self.bot.send_message(
                     chat_id=config.CHANNEL_ID,
                     text=text,
