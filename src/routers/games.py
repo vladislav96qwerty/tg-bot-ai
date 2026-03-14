@@ -4,6 +4,7 @@ from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from src.database.db import db
 from src.services.tmdb import tmdb_service
+from src.services.ai import ai_service
 from src.routers.movie import is_premium
 
 router = Router()
