@@ -63,8 +63,8 @@ class ImageGenerator:
         author_width = bbox_author[2] - bbox_author[0]
         draw.text(((self.width - author_width) // 2, current_y + 40), author_text, font=author_font, fill=self.accent_color)
 
-        # Draw "NeNetflix Bot" watermark at bottom
-        watermark = "NeNetflix Bot 🎬"
+        # Draw "Нетик — твій кіногід 🎬" watermark at bottom
+        watermark = "Нетик — твій кіногід 🎬"
         bbox_wm = draw.textbbox((0, 0), watermark, font=logo_font)
         wm_width = bbox_wm[2] - bbox_wm[0]
         draw.text(((self.width - wm_width) // 2, self.height - 100), watermark, font=logo_font, fill=(100, 100, 100))
@@ -104,5 +104,46 @@ class ImageGenerator:
             bbox = temp_draw.textbbox((0, 0), line, font=font)
             total_height += (bbox[3] - bbox[1]) + 20
         return total_height - 20 # Remove last spacing
+
+    async def blur_poster(self, poster_url: str, movie_id: int = 0) -> str:
+        """
+        Downloads a poster and applies a heavy blur for the "Guess the Movie" game.
+        """
+        import aiohttp
+        import hashlib
+
+        # Use movie_id or URL hash for unique filename to avoid race conditions
+        url_hash = hashlib.md5(poster_url.encode()).hexdigest()[:8]
+        output_path = f"src/assets/blurred_{movie_id or url_hash}.png"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(poster_url) as resp:
+                    if resp.status == 200:
+                        content = await resp.read()
+                        from io import BytesIO
+                        img = Image.open(BytesIO(content))
+
+                        # Apply heavy blur
+                        blurred = img.filter(ImageFilter.GaussianBlur(radius=25))
+
+                        # Add watermark
+                        draw = ImageDraw.Draw(blurred)
+                        try:
+                            font = ImageFont.truetype(self.font_path, 30)
+                        except Exception:
+                            font = ImageFont.load_default()
+
+                        watermark = "Вгадай фільм! 🧩"
+                        bbox = draw.textbbox((0, 0), watermark, font=font)
+                        w, h = blurred.size
+                        draw.text(((w - (bbox[2]-bbox[0]))//2, h - 50), watermark, font=font, fill=(255, 255, 255))
+
+                        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                        blurred.save(output_path)
+                        return output_path
+        except Exception as e:
+            logger.error(f"Error blurring poster: {e}")
+        return ""
 
 image_generator = ImageGenerator()

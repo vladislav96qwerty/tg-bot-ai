@@ -212,13 +212,13 @@ async def show_main_menu(message: types.Message):
 
     has_premium = await is_premium(message.from_user.id, message.bot)
     safe_name = html.escape(message.from_user.first_name)
-    
+
     menu_text = (
         f"Привіт, {safe_name}! 👋\n"
-        f"Я — <b>Нетік</b>, твій кіногід 🎬\n"
+        f"Я — <b>Нетик</b>, твій кіногід 🎬\n"
         f"Що шукаємо сьогодні?"
     )
-    
+
     # 1. Привітання + головне меню (Inline)
     await message.answer(
         menu_text,

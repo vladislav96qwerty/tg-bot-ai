@@ -69,8 +69,8 @@ async def show_profile(event: Union[types.Message, types.CallbackQuery]):
     # Explicit call for checker
     safe_saved_quotes = await db.get_saved_quotes_count(user_id)
 
-    expert_eye = "👁‍🗨 <b>Expert Eye</b> " if await db.has_achievement(user_id, "expert_eye") else ""
-    community_voice = "📢 <b>Community Voice</b> " if await db.has_achievement(user_id, "community_voice") else ""
+    expert_eye = "👁‍🗨 <b>Експертне око</b> " if await db.has_achievement(user_id, "expert_eye") else ""
+    community_voice = "📢 <b>Голос спільноти</b> " if await db.has_achievement(user_id, "community_voice") else ""
     achievements_text = f"\n🏆 <b>Досягнення:</b> {expert_eye}{community_voice}\n" if expert_eye or community_voice else ""
 
     status_text = "✅ <b>ПРЕМІУМ</b>" if has_premium else "🔓 <b>Базовий</b>"

@@ -36,9 +36,10 @@ async def start_guess_game(callback: types.CallbackQuery):
     rating = round(movie.get('vote_average', 0), 1)
 
     year = movie.get('release_date', '0000')[:4]
+    import html
     text = (
-        f"🎯 *Вгадай рейтинг TMDB*\n\n"
-        f"🎬 *{movie['title']}* ({year})\n\n"
+        f"🎯 <b>Вгадай рейтинг TMDB</b>\n\n"
+        f"🎬 <b>{html.escape(movie['title'])}</b> ({year})\n\n"
         f"Як думаєш, яку оцінку має цей фільм? 🤔"
     )
 
@@ -63,7 +64,7 @@ async def start_guess_game(callback: types.CallbackQuery):
         poster_url,
         caption=text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -105,9 +106,9 @@ async def handle_guess(callback: types.CallbackQuery):
     await db.save_rating_guess(user_id, tmdb_id, guess, actual, points)
 
     res_text = (
-        f"📊 *Результат:*\n\n"
-        f"Твій варіант: `{guess}`\n"
-        f"Справжній рейтинг: `{actual}`\n\n"
+        f"📊 <b>Результат:</b>\n\n"
+        f"Твій варіант: <code>{guess}</code>\n"
+        f"Справжній рейтинг: <code>{actual}</code>\n\n"
         f"{message}"
     )
 
@@ -117,7 +118,89 @@ async def handle_guess(callback: types.CallbackQuery):
     ])
 
     try:
-        await callback.message.edit_caption(caption=res_text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_caption(caption=res_text, reply_markup=keyboard, parse_mode="HTML")
     except Exception:
-        await callback.message.answer(res_text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.answer(res_text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+
+# ── Емодзі-кіно 🧩 ─────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "menu_emoji_game")
+async def start_emoji_game(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
+    user_id = callback.from_user.id
+    has_premium = await is_premium(user_id, callback.bot)
+    if not has_premium:
+        return await callback.answer("🔒 Гра доступна тільки підписникам каналу!", show_alert=True)
+
+    await callback.answer("🧩 Нетик загадує фільм...")
+
+    # Беремо випадковий дуже популярний фільм
+    movies = await tmdb_service.get_popular_movies(page=1)
+    movie = random.choice(movies)
+
+    from src.services.prompts import EMOJI_GAME_PROMPT
+    prompt = EMOJI_GAME_PROMPT.format(
+        title=movie.get("title"),
+        year=(movie.get("release_date") or "")[:4]
+    )
+    res = await ai_service.ask(prompt, expect_json=True)
+    if not res or "emojis" not in res:
+        return await callback.answer("Помилка AI. Спробуйте ще раз.")
+
+    text = (
+        "🧩 <b>Вгадай фільм за емодзі!</b>\n\n"
+        f"Загадка: {res['emojis']}\n"
+        f"Підказка: <i>{res['hint']}</i>\n\n"
+        "Натисни кнопку нижче, щоб побачити відповідь."
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👁 Показати відповідь", callback_data=f"emoji_ans:{movie['id']}")],
+        [InlineKeyboardButton(text="⬅️ Меню", callback_data="back_to_menu")]
+    ])
+
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("emoji_ans:"))
+async def handle_emoji_answer(callback: types.CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return await callback.answer("Помилка даних.")
+    tmdb_id = int(parts[1])
+
+    movie = await tmdb_service.get_movie_details(tmdb_id)
+    title = movie.get("title") or movie.get("original_title")
+    year = (movie.get("release_date") or "")[:4]
+
+    text = (
+        f"✅ <b>Це фільм: {title} ({year})</b>\n\n"
+        "Вгадав(ла)? Якщо так — ти справжній кіноман! 😎"
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Картка фільму", callback_data=f"movie_id:{tmdb_id}")],
+        [InlineKeyboardButton(text="🔄 Ще раз", callback_data="menu_emoji_game")],
+        [InlineKeyboardButton(text="⬅️ Меню", callback_data="back_to_menu")]
+    ])
+
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()

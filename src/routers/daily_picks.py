@@ -61,7 +61,8 @@ async def get_daily_picks_content(force: bool = False) -> Dict[str, Any]:
     ]
 
     prompt = DAILY_PICKS_PROMPT.format(
-        tmdb_movies_json=json.dumps(movies_for_ai, ensure_ascii=False)
+        tmdb_movies_json=json.dumps(movies_for_ai, ensure_ascii=False),
+        theme="Мікс найкращого"
     )
     ai_response = await ai_service.ask(prompt, expect_json=True)
 
