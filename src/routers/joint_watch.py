@@ -2,6 +2,7 @@ import html
 import uuid
 import random
 import logging
+import hashlib
 from aiogram import Router, F, types
 from aiogram.utils.deep_linking import create_start_link
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
