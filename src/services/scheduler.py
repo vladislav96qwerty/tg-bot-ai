@@ -83,8 +83,8 @@ class ChannelScheduler:
         # Every day 09:00 — Morning movie post
         self.scheduler.add_job(self.post_morning_movie, "cron", hour=9, minute=0)
 
-        # Mon 11:00 — Actor spotlight
-        self.scheduler.add_job(self.post_actor_spotlight, "cron", day_of_week="mon", hour=11, minute=0)
+        # Mon 11:00 — Actor or Director spotlight (alternating)
+        self.scheduler.add_job(self.post_spotlight, "cron", day_of_week="mon", hour=11, minute=0)
 
         # Wed 19:00 — Cinematic quiz
         self.scheduler.add_job(self.post_quiz, "cron", day_of_week="wed", hour=19, minute=0)
@@ -97,6 +97,9 @@ class ChannelScheduler:
 
         # Thu 20:00 — Taste poll
         self.scheduler.add_job(self.post_taste_poll, "cron", day_of_week="thu", hour=20, minute=0)
+
+        # Wed 15:00 — Movie Myths
+        self.scheduler.add_job(self.post_movie_myths, "cron", day_of_week="wed", hour=15, minute=0)
 
         # Fri 17:00 — Hidden gem
         self.scheduler.add_job(self.post_hidden_gem, "cron", day_of_week="fri", hour=17, minute=0)
@@ -115,6 +118,17 @@ class ChannelScheduler:
 
         self.scheduler.start()
         logger.info("Channel scheduler started.")
+
+    async def post_spotlight(self):
+        """Alternates between Actor and Director spotlight."""
+        try:
+            day_of_year = datetime.now().timetuple().tm_yday
+            if day_of_year % 2 == 0:
+                await self.post_actor_spotlight()
+            else:
+                await self.post_director_spotlight()
+        except Exception as e:
+            logger.error(f"post_spotlight error: {e}", exc_info=True)
 
     async def _notify_admins(self, error_msg: str):
         """Notification for admins on scheduler failure."""
@@ -407,7 +421,16 @@ class ChannelScheduler:
 
     async def post_daily_picks(self):
         try:
-            popular_movies = await tmdb_service.get_popular(page=1)
+            # Визначаємо тему дня (опціонально)
+            themes = {
+                0: "Новинки тижня",
+                4: "Вечір жахів (П'ятниця 13-е або просто драйв)",
+                6: "Сімейний перегляд",
+            }
+            day_of_week = datetime.now().weekday()
+            theme = themes.get(day_of_week, "Мікс найкращого")
+
+            popular_movies = await tmdb_service.get_popular(page=random.randint(1, 3))
             if not popular_movies:
                 return logger.warning("post_daily_picks: no popular movies")
 
@@ -422,7 +445,8 @@ class ChannelScheduler:
             ]
 
             prompt = DAILY_PICKS_PROMPT.format(
-                tmdb_movies_json=json.dumps(movies_for_ai, ensure_ascii=False)
+                tmdb_movies_json=json.dumps(movies_for_ai, ensure_ascii=False),
+                theme=theme
             )
             content = await ai_service.ask(prompt, expect_json=True)
 
@@ -503,29 +527,32 @@ class ChannelScheduler:
             await self._notify_admins(f"post_weekly_summary error: {e}")
 
     async def post_actor_spotlight(self):
-        """Пн 11:00 — 'Актор тижня'."""
+        """'Актор тижня'."""
         try:
-            # Знаходимо популярного актора (через трендінг або випадкового зі списку кращих)
-            # Для простоти візьмемо когось із трендів TMDB
             actor = await tmdb_service.get_trending_person()
             if not actor:
                 return logger.warning("post_actor_spotlight: no actor found")
 
             name = actor.get("name")
-            prompt = ACTOR_SPOTLIGHT_PROMPT.format(name=name)
+            known_for_list = actor.get("known_for", [])
+            known_for_titles = [m.get("title") or m.get("name") for m in known_for_list]
+            known_for_str = ", ".join(filter(None, known_for_titles))
+
+            from src.services.prompts import ACTOR_SPOTLIGHT_PROMPT
+            prompt = ACTOR_SPOTLIGHT_PROMPT.format(
+                name=name,
+                known_for=known_for_str or "кілька відомих стрічок"
+            )
             res = await ai_service.ask(prompt, expect_json=True)
-            if not res or "intro" not in res:
+            if not res or "title" not in res:
                 return logger.warning("post_actor_spotlight: AI error")
 
-            facts = "\n".join([f"🔹 {_escape_md(f)}" for f in res.get("facts", [])])
-            movies = "\n".join([f"🎬 *{_escape_md(m)}*" for m in res.get("best_movies", [])])
-
             text = (
-                f"🎭 *Актор тижня: {name}*\n\n"
-                f"{_escape_md(res['intro'])}\n\n"
-                f"*Цікаві факти:*\n{facts}\n\n"
-                f"*Найкращі фільми:*\n{movies}\n\n"
-                f"✨ {_escape_md(res.get('cta', ''))}\n\n"
+                f"🎭 *{_escape_md(res['title'])}*\n\n"
+                f"{_escape_md(res['text'])}\n\n"
+                f"🌟 *Найкраща роль:* {_escape_md(res.get('best_role', ''))}\n"
+                f"🍿 *Що глянути:* {_escape_md(res.get('watch_tip', ''))}\n\n"
+                f"{_escape_md(res.get('signature', '— Нетик'))}\n\n"
                 f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
             )
 
@@ -541,6 +568,51 @@ class ChannelScheduler:
             logger.info(f"Actor spotlight post sent: {name}")
         except Exception as e:
             logger.error(f"post_actor_spotlight error: {e}", exc_info=True)
+
+    async def post_director_spotlight(self):
+        """'Режисер тижня'."""
+        try:
+            # Отримуємо популярний фільм, а з нього — режисера
+            movies = await tmdb_service.get_popular_movies(page=random.randint(1, 5))
+            movie = random.choice(movies)
+            credits = await tmdb_service.get_movie_credits(movie["id"])
+            director = next((c for c in credits.get("crew", []) if c["job"] == "Director"), None)
+
+            if not director:
+                return logger.warning("post_director_spotlight: no director found")
+
+            name = director["name"]
+            # Можна було б додати пошук фільмографії, але для MVP спростимо
+            from src.services.prompts import DIRECTOR_SPOTLIGHT_PROMPT
+            prompt = DIRECTOR_SPOTLIGHT_PROMPT.format(
+                name=name,
+                filmography=f"фільми за участю {name}"
+            )
+            res = await ai_service.ask(prompt, expect_json=True)
+            if not res or "title" not in res:
+                return logger.warning("post_director_spotlight: AI error")
+
+            text = (
+                f"🎥 *{_escape_md(res['title'])}*\n\n"
+                f"{_escape_md(res['text'])}\n\n"
+                f"🏆 *Шедевр:* {_escape_md(res.get('masterpiece', ''))}\n"
+                f"💎 *Прихована перлина:* {_escape_md(res.get('hidden_gem', ''))}\n\n"
+                f"{_escape_md(res.get('signature', '— Нетик'))}\n\n"
+                f"🎬 @{config.CHANNEL_USERNAME.replace('@', '')}"
+            )
+
+            photo_path = director.get("profile_path")
+            photo_url = f"https://image.tmdb.org/t/p/w500{photo_path}" if photo_path else None
+
+            if photo_url:
+                await self.bot.send_photo(chat_id=config.CHANNEL_ID, photo=photo_url, caption=text, parse_mode="Markdown")
+            else:
+                await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
+
+            await db.save_channel_post("director_spotlight", name, text, None, 0)
+            logger.info(f"Director spotlight post sent: {name}")
+        except Exception as e:
+            logger.error(f"post_director_spotlight error: {e}", exc_info=True)
 
     async def post_quiz(self):
         """Ср 19:00 — Кіновікторина (Poll)."""
@@ -573,7 +645,18 @@ class ChannelScheduler:
     async def post_guess_movie(self):
         """Сб 15:00 — 'Впізнай фільм' (Питання)."""
         try:
-            res = await ai_service.ask(GUESS_MOVIE_PROMPT, expect_json=True)
+            # Обираємо популярний фільм для гри
+            movies = await tmdb_service.get_popular_movies(page=random.randint(1, 5))
+            if not movies:
+                return logger.warning("post_guess_movie: no movies found")
+            movie = random.choice(movies)
+
+            prompt = GUESS_MOVIE_PROMPT.format(
+                title=movie.get("title"),
+                year=(movie.get("release_date") or "")[:4],
+                overview=movie.get("overview", "")
+            )
+            res = await ai_service.ask(prompt, expect_json=True)
             if not res or "title" not in res:
                 return logger.warning("post_guess_movie: AI error")
 
@@ -601,7 +684,19 @@ class ChannelScheduler:
             # Поки відправимо просто з емодзі, або якщо є постер - надішлемо його (але це спойлер).
             # Спробуємо надіслати без картинки або з генерованою.
             
-            bot_msg = await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
+            blurred_path = ""
+            if poster_url:
+                blurred_path = await image_generator.blur_poster(poster_url, movie_id=movie.get("id"))
+
+            if blurred_path:
+                bot_msg = await self.bot.send_photo(
+                    chat_id=config.CHANNEL_ID,
+                    photo=FSInputFile(blurred_path),
+                    caption=text,
+                    parse_mode="Markdown"
+                )
+            else:
+                bot_msg = await self.bot.send_message(chat_id=config.CHANNEL_ID, text=text, parse_mode="Markdown")
             
             # Зберігаємо відповідь у базу, щоб post_guess_answer міг її дістати
             
@@ -657,6 +752,43 @@ class ChannelScheduler:
             logger.info(f"Guess movie answer sent: {data['title']}")
         except Exception as e:
             logger.error(f"post_guess_answer error: {e}", exc_info=True)
+
+    async def post_movie_myths(self):
+        """Правда чи міф?"""
+        try:
+            movies = await tmdb_service.get_popular_movies(page=random.randint(1, 5))
+            movie = random.choice(movies)
+
+            from src.services.prompts import MOVIE_MYTHS_PROMPT
+            prompt = MOVIE_MYTHS_PROMPT.format(
+                title=movie.get("title"),
+                year=(movie.get("release_date") or "")[:4]
+            )
+            res = await ai_service.ask(prompt, expect_json=True)
+            if not res: return
+
+            text = (
+                f"🕵️‍♂️ *Кінодетектив Нетик: Правда чи міф?*\n\n"
+                f"Фільм: *{_escape_md(movie.get('title'))}*\n\n"
+                f"«{_escape_md(res['statement'])}»\n\n"
+                f"Як думаєте, це правда чи вигадка? Грлосуйте нижче! 👇"
+            )
+
+            options = ["✅ Правда", "❌ Міф"]
+            correct_id = 0 if res["is_true"] else 1
+
+            await self.bot.send_poll(
+                chat_id=config.CHANNEL_ID,
+                question=f"Правда чи міф: {movie.get('title')}",
+                options=options,
+                type="quiz",
+                correct_option_id=correct_id,
+                explanation=_escape_md(res.get("explanation", "")),
+                is_anonymous=False
+            )
+            logger.info(f"Movie myths post sent: {movie.get('title')}")
+        except Exception as e:
+            logger.error(f"post_movie_myths error: {e}")
 
     async def post_taste_poll(self):
         """Чт 20:00 — Опитування про смаки."""

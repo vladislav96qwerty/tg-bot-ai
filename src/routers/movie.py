@@ -188,9 +188,13 @@ async def show_movie_details(
 
     provider_rows = await _build_providers_keyboard(providers, movie_id, title)
 
+    # Fallback search button
+    fallback_url = tmdb_service.build_justwatch_url(title)
+    provider_rows.append([InlineKeyboardButton(text="🔍 Знайти на JustWatch", url=fallback_url)])
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🌿 До watchlist", callback_data=f"wl_add:{movie_id}"),
+            InlineKeyboardButton(text="🌿 До списку", callback_data=f"wl_add:{movie_id}"),
             InlineKeyboardButton(text="⭐ Оцінити", callback_data=f"rate:{movie_id}")
         ],
         *provider_rows,

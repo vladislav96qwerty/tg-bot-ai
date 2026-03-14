@@ -26,7 +26,7 @@ def get_onboarding_genres_kb(selected_genres: Set[str]) -> InlineKeyboardMarkup:
         ("Бойовик 👥", "Бойовик"), ("Комедія 😄", "Комедія"),
         ("Драма 🎭", "Драма"), ("Жахи 👻", "Жахи"),
         ("Фантастика 🚀", "Фантастика"), ("Мелодрама 🥰", "Мелодрама"),
-        ("Анімація 🎨", "Анімація"), ("Документальна 🎙", "Документальна"),
+        ("Анімація 🎨", "Анімація"), ("Документальні 🎙", "Документальна"),
     ]
     keyboard = []
     row = []
@@ -87,7 +87,7 @@ def _get_category_buttons(key: str, is_subscribed: bool) -> list:
             [InlineKeyboardButton(text="🔍 Знайти фільм",         callback_data="menu_search"),
              InlineKeyboardButton(text="🎃 Добірка дня",           callback_data="menu_daily_picks")],
             [InlineKeyboardButton(text=f"🤖 AI-рекомендація{lock}", callback_data="menu_ai_rec"),
-             InlineKeyboardButton(text=f"🩶 По настрою{lock}",      callback_data="menu_mood")],
+             InlineKeyboardButton(text=f"🩶 За настроєм{lock}",    callback_data="menu_mood")],
         ]
     elif key == "cinema":
         return [
@@ -102,7 +102,8 @@ def _get_category_buttons(key: str, is_subscribed: bool) -> list:
             [InlineKeyboardButton(text=f"🃏 Свайп-режим{lock}",    callback_data="menu_swipe"),
              InlineKeyboardButton(text=f"🎯 Вгадай рейтинг{lock}", callback_data="menu_guess")],
             [InlineKeyboardButton(text=f"👫 Разом{lock}",          callback_data="menu_together"),
-             InlineKeyboardButton(text=f"🏅 Досягнення{lock}",     callback_data="menu_achievements")],
+             InlineKeyboardButton(text=f"🧩 Емодзі-кіно{lock}",    callback_data="menu_emoji_game")],
+            [InlineKeyboardButton(text=f"🏅 Досягнення{lock}",     callback_data="menu_achievements")],
         ]
     elif key == "profile":
         return [
