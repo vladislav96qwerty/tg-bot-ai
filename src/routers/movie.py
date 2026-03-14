@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict  # ✅ FIX #2: прибрано невикористаний Optional
 from urllib.parse import quote_plus
