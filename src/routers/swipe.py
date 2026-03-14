@@ -114,12 +114,9 @@ async def handle_swipe(callback: types.CallbackQuery):
 
     session = await db.get_swipe_session(user_id)
     if not session:
-        # Assuming 'genres' is a string, 'last_movie_id' is int, 'session_data' is JSON string
-        # The original save_swipe_session takes (user_id, genres, last_movie_id, session_data)
-        # The provided snippet for save_swipe_session(user_id, "{}", datetime.now().isoformat())
-        # does not match the signature of the existing save_swipe_session.
-        # I will use default values that match the existing signature.
-        await db.save_swipe_session(user_id, "Бойовик,Комедія", 0, json.dumps([]))
+        prefs = await db.get_user_preferences(user_id)
+        genres = prefs.get("genres", "Бойовик,Комедія") if prefs else "Бойовик,Комедія"
+        await db.save_swipe_session(user_id, genres, 0, json.dumps([]))
         session = await db.get_swipe_session(user_id)
 
     if not session:
